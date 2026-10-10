@@ -193,7 +193,10 @@ pub struct Scene {
     pub captions: crate::captions::CaptionTrack,
     /// Extra time appended at the end (avoids cutting the last frame).
     pub tail: f64,
+    post_effects: Vec<(f64, f64, PostFn)>,
 }
+
+type PostFn = Arc<dyn Fn(f64) -> Vec<crate::effects::Effect> + Send + Sync>;
 
 impl Default for Scene {
     fn default() -> Self {
@@ -222,6 +225,7 @@ impl Scene {
             audio: Default::default(),
             captions: Default::default(),
             tail: 0.0,
+            post_effects: Vec::new(),
         }
     }
     /// Vertical 9:16 scene (shorts / reels), 14.22 units tall, 8 wide.
@@ -557,10 +561,17 @@ impl Scene {
 
     /// Draw the frame at time `t`.
     pub fn render_into(&self, t: f64, pm: &mut tiny_skia::Pixmap, cfg: RenderConfig) {
+        self.render_impl(t, pm, cfg, true);
+    }
+
+    /// Draw the frame; `clear` fills the background first (false = draw as a layer).
+    pub fn render_impl(&self, t: f64, pm: &mut tiny_skia::Pixmap, cfg: RenderConfig, clear: bool) {
         let cam = self.camera_at(t);
         let mobs = self.frame_mobjects(t);
         let mut canvas = Canvas::new(pm, cfg, cam);
-        canvas.clear();
+        if clear {
+            canvas.clear();
+        }
         let any_fixed = mobs.iter().any(|m| m.1);
         for (m, fixed) in &mobs {
             if !fixed {
@@ -580,8 +591,31 @@ impl Scene {
                 }
             }
         }
+        // frame effects (Remotion @remotion/effects style)
+        for pe in &self.post_effects {
+            if t >= pe.0 && t < pe.1 {
+                for e in (pe.2)(t - pe.0) {
+                    e.apply(pm);
+                }
+            }
+        }
         // burned-in captions are drawn in screen space on top
         self.captions.draw(t, pm, cfg, self.config.frame_height);
+    }
+
+    /// Apply frame effects between `from` and `to` (seconds); the closure gets the
+    /// time since `from` so effect parameters can animate.
+    pub fn post_effect(
+        &mut self,
+        from: f64,
+        to: f64,
+        f: impl Fn(f64) -> Vec<crate::effects::Effect> + Send + Sync + 'static,
+    ) {
+        self.post_effects.push((from, to, Arc::new(f)));
+    }
+    /// Apply constant frame effects for the whole video.
+    pub fn effects(&mut self, effects: Vec<crate::effects::Effect>) {
+        self.post_effect(0.0, f64::INFINITY, move |_| effects.clone());
     }
 
     // ------------------------------------------------------------- timing

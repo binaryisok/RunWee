@@ -58,6 +58,12 @@ pub enum Rate {
     Spring(SpringConfig),
     /// Discrete steps.
     Steps(u32),
+    /// Remotion `Easing.poly(n)`: t^n.
+    Poly(f64),
+    /// Remotion `Easing.step0`: 1 for any t > 0.
+    Step0,
+    /// Remotion `Easing.step1`: 1 only at t >= 1.
+    Step1,
     /// Apply an inner rate inside the window `[a, b]` of the animation.
     Squish(Box<Rate>, f64, f64),
     Custom(Arc<dyn Fn(f64) -> f64 + Send + Sync>),
@@ -281,6 +287,21 @@ impl Rate {
                 let n = (*n).max(1) as f64;
                 (t * n).floor().min(n) / n
             }
+            Poly(n) => t.powf(*n),
+            Step0 => {
+                if t > 0.0 {
+                    1.0
+                } else {
+                    0.0
+                }
+            }
+            Step1 => {
+                if t >= 1.0 {
+                    1.0
+                } else {
+                    0.0
+                }
+            }
             Squish(inner, a, b) => {
                 if (b - a).abs() < 1e-12 {
                     if t < *a {
@@ -346,6 +367,9 @@ impl Rate {
             Bezier(..) => "bezier",
             Spring(_) => "spring",
             Steps(_) => "steps",
+            Poly(_) => "poly",
+            Step0 => "step0",
+            Step1 => "step1",
             Squish(..) => "squish",
             Custom(_) => "custom",
         }

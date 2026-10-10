@@ -13,15 +13,47 @@ use tiny_skia::Pixmap;
 pub trait Composition: Send + Sync {
     /// Length in seconds.
     fn duration(&self) -> f64;
-    /// Draw the frame at time `t` (seconds) into `pm` (already sized to `cfg`).
+    /// Draw the frame at time `t` (seconds) into `pm` (already sized to `cfg`),
+    /// clearing it with the composition's background first.
     fn render_frame(&self, t: f64, pm: &mut Pixmap, cfg: RenderConfig);
+    /// Draw on top of existing pixels without clearing (used for layering).
+    fn render_layer(&self, t: f64, pm: &mut Pixmap, cfg: RenderConfig) {
+        let mut tmp = Pixmap::new(cfg.width, cfg.height).expect("bad size");
+        self.render_frame(t, &mut tmp, cfg);
+        pm.draw_pixmap(
+            0,
+            0,
+            tmp.as_ref(),
+            &tiny_skia::PixmapPaint::default(),
+            tiny_skia::Transform::identity(),
+            None,
+        );
+    }
+    /// Audio clips of this composition (timeline relative to its start).
+    fn audio_track(&self) -> crate::audio::AudioTrack {
+        Default::default()
+    }
+    /// Caption cues of this composition (relative to its start).
+    fn caption_cues(&self) -> Vec<crate::captions::Cue> {
+        vec![]
+    }
     /// Mixed audio (interleaved stereo f32 at `sample_rate`), if any.
-    fn audio(&self, _sample_rate: u32) -> Option<Vec<f32>> {
-        None
+    fn audio(&self, sample_rate: u32) -> Option<Vec<f32>> {
+        let tr = self.audio_track();
+        if tr.is_empty() {
+            None
+        } else {
+            Some(tr.mix(sample_rate, self.duration()))
+        }
     }
     /// Subtitles in SRT format, if any.
     fn subtitles_srt(&self) -> Option<String> {
-        None
+        let cues = self.caption_cues();
+        if cues.is_empty() {
+            None
+        } else {
+            Some(crate::captions::serialize_srt_cues(&cues))
+        }
     }
 }
 
@@ -32,19 +64,14 @@ impl Composition for crate::scene::Scene {
     fn render_frame(&self, t: f64, pm: &mut Pixmap, cfg: RenderConfig) {
         self.render_into(t, pm, cfg);
     }
-    fn audio(&self, sample_rate: u32) -> Option<Vec<f32>> {
-        if self.audio.is_empty() {
-            None
-        } else {
-            Some(self.audio.mix(sample_rate, self.duration()))
-        }
+    fn render_layer(&self, t: f64, pm: &mut Pixmap, cfg: RenderConfig) {
+        self.render_impl(t, pm, cfg, false);
     }
-    fn subtitles_srt(&self) -> Option<String> {
-        if self.captions.is_empty() {
-            None
-        } else {
-            Some(self.captions.to_srt())
-        }
+    fn audio_track(&self) -> crate::audio::AudioTrack {
+        self.audio.clone()
+    }
+    fn caption_cues(&self) -> Vec<crate::captions::Cue> {
+        self.captions.cues.clone()
     }
 }
 
