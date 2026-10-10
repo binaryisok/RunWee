@@ -51,6 +51,8 @@ and random access (instant stills at any time, Remotion style).
 
 ## Phases (each phase = one commit, validated by CI)
 
+Status: phases 0–15 are complete. See [FEATURE_PARITY.md](FEATURE_PARITY.md) for the API map.
+
 | # | Phase | Deliverables |
 |---|-------|--------------|
 | 0 | Scaffold | Workspace, fonts, CI (fmt, clippy, tests, example renders), this plan |
@@ -67,5 +69,5 @@ and random access (instant stills at any time, Remotion style).
 | 11 | Chemistry | Periodic table (118 elements), Bohr atoms, electron configuration, molecules (2D structural & 3D ball-and-stick), Lewis dots, reaction equations, glassware, orbitals |
 | 12 | Biology | Cells (animal/plant), organelles, DNA helix, neuron, virus, membrane, labelled diagrams, cell division |
 | 13 | Question solving | `Solution` template with problem/given/steps/answer, highlight & step transforms, narration-aware pacing |
-| 14 | Scripting & CLI | Rhai bindings for the whole API, `runwee render/still/new/info`, quality presets |
+| 14 | Scripting & CLI | Rhai bindings for the whole API (~480 functions), `runwee render/new/info/api`, `--still`, `--props`, `--vertical`, quality presets |
 | 15 | Examples & docs | Example gallery for every subject, README, CI renders examples and uploads videos |

@@ -1,13 +1,13 @@
 // Remotion-style piece: voiceover-timed animation, captions, effects and transitions.
 // Without a TTS command (RUNWEE_TTS) narration is timed from word counts and shown as captions.
-captions("tiktok");
+captions("karaoke");
 music(0.15);
 effect("vignette", 0.5);
 
-let head = register(bold_text("Newton's second law", 60, WHITE));
+let head = register(bold_text("Newton's second law", 0.9, WHITE).to_edge(UP, 0.6));
 voiceover("Force equals mass times acceleration.", |info| {
     play(write(head), 1.2);
-    let eq = register(tex(`F = ma`, 2.0).shift(DOWN * 1.2));
+    let eq = register(tex(`F = ma`, 2.0));
     play(fade_in(eq, UP));
     sound("pop", 0.6);
 });
