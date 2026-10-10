@@ -149,6 +149,8 @@ struct ScalarSeg {
     from: f64,
     to: f64,
     rate: Rate,
+    /// Custom value `f(from, eased_alpha)` (otherwise linear `from → to`).
+    f: Option<ScalarFn>,
 }
 
 #[derive(Clone)]
@@ -462,6 +464,7 @@ impl Scene {
             from: v,
             to: v,
             rate: Rate::Linear,
+            f: None,
         });
     }
     pub fn value(&self, k: Tracker) -> f64 {
@@ -478,7 +481,10 @@ impl Scene {
             s.to
         } else {
             let a = s.rate.eval((t - s.start) / (s.end - s.start));
-            lerp(s.from, s.to, a)
+            match &s.f {
+                Some(f) => f(s.from, a),
+                None => lerp(s.from, s.to, a),
+            }
         }
     }
 
@@ -685,6 +691,13 @@ impl Scene {
                 total
             }
             AnimKind::Wait => 1.0,
+            AnimKind::TimeWarp {
+                anim, time_scale, ..
+            } => anim.run_time.unwrap_or_else(|| self.natural_duration(anim)) * time_scale,
+            AnimKind::TransformAnimations { from, to } => {
+                let d = |a: &Animation| a.run_time.unwrap_or_else(|| self.natural_duration(a));
+                d(from).max(d(to))
+            }
             _ => 1.0,
         }
     }
@@ -1218,8 +1231,79 @@ impl Scene {
             }
             AnimKind::TrackerTo { tracker, value } => {
                 ctx.trackers
-                    .push((*tracker, off, dur, *value, rate.clone()));
+                    .push((*tracker, off, dur, *value, rate.clone(), None));
                 ctx.extend(off + dur);
+            }
+            AnimKind::TrackerWith { tracker, f } => {
+                ctx.trackers
+                    .push((*tracker, off, dur, 0.0, rate.clone(), Some(f.clone())));
+                ctx.extend(off + dur);
+            }
+            AnimKind::Overlay {
+                obj,
+                build,
+                f,
+                follow,
+            } => {
+                let snap = self.snapshot(*obj, ctx, off);
+                let fixed = self.entries[obj.0].fixed;
+                let temp = self.new_entry(build(&snap), self.time, self.time, fixed);
+                if *follow {
+                    let (o, b) = (*obj, build.clone());
+                    self.entries[temp.0].dynamic =
+                        Some((self.time, Arc::new(move |c: &FrameCtx| b(&c.get(o)))));
+                }
+                self.bring_to_front(temp);
+                ctx.temp(temp, off, off + dur);
+                let f = f.clone();
+                push(ctx, temp, true, Arc::new(move |m, a, r| f(m, r.eval(a))));
+            }
+            AnimKind::TimeWarp { anim, warp, .. } => {
+                let mut sub = Compile::default();
+                self.compile(anim, 0.0, dur, &mut sub);
+                // outer progress u is eased by this animation's rate, then warped
+                let rate = rate.clone();
+                let w: WarpFn = {
+                    let warp = warp.clone();
+                    Arc::new(move |u| warp(rate.eval(u.clamp(0.0, 1.0))))
+                };
+                ctx.merge_warped(sub, off, dur, w);
+            }
+            AnimKind::TransformAnimations { from, to } => {
+                let mut sa = Compile::default();
+                let mut sb = Compile::default();
+                self.compile(from, 0.0, dur, &mut sa);
+                self.compile(to, 0.0, dur, &mut sb);
+                let (Some((oa, ia)), Some((ob, ib))) =
+                    (sa.items.into_iter().next(), sb.items.into_iter().next())
+                else {
+                    ctx.extend(off + dur);
+                    return;
+                };
+                let base_a = Arc::new(self.snapshot(oa, ctx, off));
+                let base_b = Arc::new(self.snapshot(ob, ctx, off));
+                let final_b = Arc::new(eval_items(&ib, &base_b, dur));
+                let (ia, ib) = (Arc::new(ia), Arc::new(ib));
+                ctx.introduce(oa, self.is_present(oa));
+                push(
+                    ctx,
+                    oa,
+                    false,
+                    Arc::new(move |_m, a, r| {
+                        if a >= 1.0 {
+                            return (*final_b).clone();
+                        }
+                        let x = r.eval(a);
+                        let p = eval_items(&ia, &base_a, a * dur);
+                        let q = eval_items(&ib, &base_b, a * dur);
+                        let (la, lb) = Mobject::align_for_transform(&p, &q);
+                        Mobject::group(
+                            la.iter()
+                                .zip(lb.iter())
+                                .map(|(u, v)| Mobject::lerp_leaf(u, v, x)),
+                        )
+                    }),
+                );
             }
             AnimKind::Camera(target) => {
                 ctx.cameras.push((*target, off, dur, rate.clone()));
@@ -1257,15 +1341,20 @@ impl Scene {
         // trackers (sorted by start)
         let mut trs = ctx.trackers;
         trs.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
-        for (k, off, dur, value, rate) in trs {
+        for (k, off, dur, value, rate, f) in trs {
             let start = t0 + off;
             let from = self.tracker_value_at(k, start);
+            let to = match &f {
+                Some(f) => f(from, rate.eval(1.0)),
+                None => value,
+            };
             self.trackers[k.0].1.push(ScalarSeg {
                 start,
                 end: start + dur,
                 from,
-                to: value,
+                to,
                 rate,
+                f,
             });
         }
         let mut cams = ctx.cameras;
@@ -1294,7 +1383,7 @@ struct Compile {
     removes: Vec<(Obj, f64)>,
     shows: Vec<(Obj, f64)>,
     temps: Vec<(Obj, f64, f64)>,
-    trackers: Vec<(Tracker, f64, f64, f64, Rate)>,
+    trackers: Vec<(Tracker, f64, f64, f64, Rate, Option<ScalarFn>)>,
     cameras: Vec<(CameraTarget, f64, f64, Rate)>,
     total: f64,
 }
@@ -1325,6 +1414,97 @@ impl Compile {
     }
     fn temp(&mut self, o: Obj, a: f64, b: f64) {
         self.temps.push((o, a, b));
+    }
+    /// Merge a sub-compilation laid out over `[0, dur]` into this one at `off`,
+    /// remapping its timeline: at outer progress `u` it shows inner time `warp(u) * dur`.
+    fn merge_warped(&mut self, sub: Compile, off: f64, dur: f64, warp: WarpFn) {
+        let d = dur.max(1e-12);
+        // smallest u with warp(u) >= p (warp is monotone)
+        let inv = {
+            let warp = warp.clone();
+            move |p: f64| -> f64 {
+                if p <= 0.0 {
+                    return 0.0;
+                }
+                let (mut lo, mut hi) = (0.0f64, 1.0f64);
+                for _ in 0..50 {
+                    let mid = 0.5 * (lo + hi);
+                    if warp(mid) >= p - 1e-12 {
+                        hi = mid;
+                    } else {
+                        lo = mid;
+                    }
+                }
+                hi
+            }
+        };
+        let map_t = |t: f64| off + inv((t / d).clamp(0.0, 1.0)) * d;
+        // local alpha of an inner span [o, o + l] given outer local progress s over [s0, s1]
+        let local = {
+            let warp = warp.clone();
+            move |o: f64, l: f64, s0: f64, s1: f64, s: f64| -> f64 {
+                let u = (s0 + s * (s1 - s0)) / d;
+                let it = warp(u.clamp(0.0, 1.0)) * d;
+                if l <= 1e-12 {
+                    if it >= o {
+                        1.0
+                    } else {
+                        0.0
+                    }
+                } else {
+                    ((it - o) / l).clamp(0.0, 1.0)
+                }
+            }
+        };
+        let local = Arc::new(local);
+        for (o, items) in sub.items {
+            for it in items {
+                let s0 = map_t(it.off) - off;
+                let s1 = (map_t(it.off + it.dur) - off).max(s0);
+                let (io, il, f) = (it.off, it.dur, it.f.clone());
+                let lc = local.clone();
+                self.push(
+                    o,
+                    Item {
+                        off: off + s0,
+                        dur: s1 - s0,
+                        rate: it.rate,
+                        introduces: it.introduces,
+                        f: Arc::new(move |m, a, r| f(m, lc(io, il, s0, s1, a), r)),
+                    },
+                );
+            }
+        }
+        for o in sub.introduced {
+            if !self.introduced.contains(&o) {
+                self.introduced.push(o);
+            }
+        }
+        for (o, t) in sub.removes {
+            self.removes.push((o, map_t(t)));
+        }
+        for (o, t) in sub.shows {
+            self.shows.push((o, map_t(t)));
+        }
+        for (o, a, b) in sub.temps {
+            self.temps.push((o, map_t(a), map_t(b)));
+        }
+        let warp_rate = |io: f64, il: f64, rate: Rate| -> (f64, f64, Rate) {
+            let s0 = map_t(io) - off;
+            let s1 = (map_t(io + il) - off).max(s0);
+            let lc = local.clone();
+            let r = Rate::Custom(Arc::new(move |s| rate.eval(lc(io, il, s0, s1, s))));
+            (off + s0, s1 - s0, r)
+        };
+        for (k, io, il, v, rate, f) in sub.trackers {
+            let (o2, d2, r) = warp_rate(io, il, rate);
+            self.trackers.push((k, o2, d2, v, r, f));
+        }
+        for (target, io, il, rate) in sub.cameras {
+            let (o2, d2, r) = warp_rate(io, il, rate);
+            self.cameras.push((target, o2, d2, r));
+        }
+        self.extend(off + dur);
     }
 }
 

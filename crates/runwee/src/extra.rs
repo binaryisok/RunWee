@@ -10,7 +10,7 @@ use crate::math::*;
 use crate::mobject::*;
 use crate::path::*;
 use crate::rate::Rate;
-use crate::scene::{multiply_opacity, Obj, Scene};
+use crate::scene::{multiply_opacity, FrameCtx, Obj, Scene, Tracker};
 use crate::shapes::*;
 use crate::style::*;
 use std::sync::Arc;
@@ -386,6 +386,285 @@ pub fn sweep_highlight(o: Obj, color: Color) -> Animation {
     .rate(Rate::Linear)
 }
 
+// ------------------------------------------------ surrounding-shape flashes
+
+fn surround(m: &Mobject, buff: f64, color: Color, width: f32) -> Mobject {
+    let b = m.bounds_or_origin().expand(buff);
+    rectangle(b.width(), b.height())
+        .move_to(b.center())
+        .stroke(color, width)
+        .fill_opacity(0.0)
+}
+
+/// A bright stroke travels around the object's surrounding rectangle (manim's
+/// `FlashAround`: `VShowPassingFlash` with time width 1, stroke 4, yellow).
+pub fn flash_around(o: Obj) -> Animation {
+    flash_around_with(o, YELLOW, 4.0, SMALL_BUFF, 1.0)
+}
+
+/// [`flash_around`] with colour, stroke width, buffer and time width.
+pub fn flash_around_with(
+    o: Obj,
+    color: Color,
+    width: f32,
+    buff: f64,
+    time_width: f64,
+) -> Animation {
+    overlay_anim(
+        o,
+        true,
+        move |m| surround(m, buff, color, width),
+        move |m, x| v_passing_flash_frame(m, x, time_width, 0.0),
+    )
+}
+
+/// Like [`flash_around`] but along an underline (manim's `FlashUnder`).
+pub fn flash_under(o: Obj, color: Color) -> Animation {
+    overlay_anim(
+        o,
+        true,
+        move |m| underline(m, SMALL_BUFF).stroke(color, 4.0),
+        |m, x| v_passing_flash_frame(m, x, 1.0, 0.0),
+    )
+}
+
+/// A short flash runs around the surrounding rectangle (manim's `ShowPassingFlashAround`).
+pub fn show_passing_flash_around(o: Obj, color: Color) -> Animation {
+    overlay_anim(
+        o,
+        true,
+        move |m| surround(m, SMALL_BUFF, color, 2.0),
+        |m, x| passing_flash_partial(m, x, 0.1),
+    )
+}
+
+/// Surrounding rectangle drawn then erased (manim's `ShowCreationThenDestructionAround`).
+pub fn show_creation_then_destruction_around(o: Obj, color: Color) -> Animation {
+    overlay_anim(
+        o,
+        true,
+        move |m| surround(m, SMALL_BUFF, color, 2.0),
+        |m, x| passing_flash_partial(m, x, 2.0),
+    )
+}
+
+/// Surrounding rectangle drawn then faded (manim's `ShowCreationThenFadeAround`).
+pub fn show_creation_then_fade_around(o: Obj, color: Color) -> Animation {
+    overlay_anim(
+        o,
+        true,
+        move |m| surround(m, SMALL_BUFF, color, 2.0),
+        |m, x| {
+            if x < 0.5 {
+                m.clone().partial(0.0, 2.0 * x)
+            } else {
+                multiply_opacity(m.clone(), (2.0 - 2.0 * x) as f32)
+            }
+        },
+    )
+    .run_time(2.0)
+}
+
+/// The object is shown only as a bump of stroke width travelling along its
+/// outline, then removed (manim's `VShowPassingFlash`, a.k.a.
+/// `ShowPassingFlashWithThinningStrokeWidth`).
+pub fn v_show_passing_flash(o: Obj, time_width: f64, taper_width: f64) -> Animation {
+    custom_anim(o, true, true, move |m, x| {
+        v_passing_flash_frame(m, x, time_width, taper_width)
+    })
+    .rate(Rate::Linear)
+}
+
+/// Fade in while a bright outline sweeps along the shape (manim's `FlashyFadeIn`).
+pub fn flashy_fade_in(o: Obj) -> Animation {
+    flashy_fade_in_with(o, 2.0, 0.0, 1.0)
+}
+
+/// [`flashy_fade_in`] with outline stroke width, fade lag and flash time width.
+pub fn flashy_fade_in_with(o: Obj, stroke_width: f32, fade_lag: f64, time_width: f64) -> Animation {
+    // the outline is compiled first so it snapshots the object before the fade
+    together(vec![
+        overlay_anim(
+            o,
+            false,
+            move |m| {
+                m.clone()
+                    .fill_opacity(0.0)
+                    .stroke_width(stroke_width)
+                    .stroke_opacity(1.0)
+            },
+            move |m, x| v_passing_flash_frame(m, x, time_width, 0.05),
+        ),
+        fade_in(o).rate(Rate::Squish(Box::new(Rate::Smooth), fade_lag, 1.0)),
+    ])
+}
+
+/// Animate the colour (manim's `FadeToColor`).
+pub fn fade_to_color(o: Obj, color: Color) -> Animation {
+    o.animate().color(color).build()
+}
+
+/// manim's `WiggleOutThenIn` with all parameters; `about` defaults to the centre.
+pub fn wiggle_out_then_in(
+    o: Obj,
+    scale_value: f64,
+    rotation_angle: f64,
+    n_wiggles: f64,
+    about: Option<Vec2>,
+) -> Animation {
+    custom_anim(o, false, false, move |m, x| {
+        let p = about.unwrap_or_else(|| m.center());
+        m.clone()
+            .scale_about(lerp(1.0, scale_value, Rate::ThereAndBack.eval(x)), p)
+            .rotate_about(Rate::Wiggle(n_wiggles).eval(x) * rotation_angle, p)
+    })
+    .rate(Rate::Linear)
+    .run_time(2.0)
+}
+
+fn scale_v_opacity(mut m: Mobject, k: f32) -> Mobject {
+    m.for_each_mut(&mut |n| {
+        n.style.stroke_opacity *= k;
+        n.style.fill_opacity *= k;
+        if let Some(i) = &mut n.image {
+            i.opacity *= k;
+        }
+    });
+    m
+}
+
+/// Fade in by scaling stroke and fill opacity, no shift (manim's `VFadeIn`).
+pub fn v_fade_in(o: Obj) -> Animation {
+    custom_anim(o, true, false, |m, x| scale_v_opacity(m.clone(), x as f32))
+}
+
+/// Fade out by scaling stroke and fill opacity (manim's `VFadeOut`).
+pub fn v_fade_out(o: Obj) -> Animation {
+    custom_anim(o, false, true, |m, x| {
+        scale_v_opacity(m.clone(), 1.0 - x as f32)
+    })
+}
+
+/// Stroke/fill fade in then out (manim's `VFadeInThenOut`).
+pub fn v_fade_in_then_out(o: Obj) -> Animation {
+    custom_anim(o, true, true, |m, x| {
+        scale_v_opacity(m.clone(), Rate::ThereAndBack.eval(x) as f32)
+    })
+    .rate(Rate::Linear)
+}
+
+/// Move the object so its centre goes to `f(centre)` (manim's
+/// `ApplyPointwiseFunctionToCenter`); the shape itself is not warped.
+pub fn apply_function_to_center(
+    o: Obj,
+    f: impl Fn(Vec2) -> Vec2 + Send + Sync + 'static,
+) -> Animation {
+    custom_anim(o, false, false, move |m, x| {
+        let c = m.center();
+        m.clone().shift((f(c) - c) * x)
+    })
+}
+
+/// Transform to a target made with [`Scene::generate_target`] (manim's `MoveToTarget`).
+pub fn move_to_target(o: Obj, target: Mobject) -> Animation {
+    transform(o, target)
+}
+
+// ------------------------------------------------------------ value trackers
+
+impl Tracker {
+    /// Drive the tracker with `f(start_value, eased_alpha)`.
+    pub fn with(self, f: impl Fn(f64, f64) -> f64 + Send + Sync + 'static) -> Animation {
+        Animation::new(AnimKind::TrackerWith {
+            tracker: self,
+            f: Arc::new(f),
+        })
+    }
+    /// Animate to `value` interpolating in log space (manim's
+    /// `ExponentialValueTracker`); falls back to linear when signs differ or a value is 0.
+    pub fn to_exponential(self, value: f64) -> Animation {
+        self.with(move |s, a| exp_lerp(s, value, a))
+    }
+    /// Set the value to `f(alpha)` throughout the animation (manim's `ChangingDecimal`).
+    pub fn changing(self, f: impl Fn(f64) -> f64 + Send + Sync + 'static) -> Animation {
+        self.with(move |_, a| f(a))
+    }
+    /// Count from `source` up to the tracker's current value (manim's `CountInFrom`).
+    pub fn count_in_from(self, source: f64) -> Animation {
+        self.with(move |s, a| lerp(source, s, a.clamp(0.0, 1.0)))
+    }
+}
+
+/// Interpolate `a → b` geometrically (in log space) when both have the same sign.
+pub fn exp_lerp(a: f64, b: f64, t: f64) -> f64 {
+    if a * b > 0.0 {
+        a.signum() * (a.abs().ln() + (b.abs().ln() - a.abs().ln()) * t).exp()
+    } else {
+        lerp(a, b, t)
+    }
+}
+
+/// A tracker that animates in log space (manim's `ExponentialValueTracker`):
+/// halfway from 1 to 100 is 10.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct ExponentialValueTracker(pub Tracker);
+
+impl ExponentialValueTracker {
+    pub fn to(self, value: f64) -> Animation {
+        self.0.to_exponential(value)
+    }
+    pub fn tracker(self) -> Tracker {
+        self.0
+    }
+    pub fn value(self, ctx: &FrameCtx) -> f64 {
+        ctx.value(self.0)
+    }
+}
+
+/// A complex number tracker (manim's `ComplexValueTracker`): a pair of trackers,
+/// value as `Vec2` (x = real, y = imaginary).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct ComplexValueTracker {
+    pub re: Tracker,
+    pub im: Tracker,
+}
+
+impl ComplexValueTracker {
+    /// Animate both parts linearly to `z`.
+    pub fn to(self, z: Vec2) -> Animation {
+        together(vec![self.re.to(z.x), self.im.to(z.y)])
+    }
+    pub fn value(self, ctx: &FrameCtx) -> Vec2 {
+        v2(ctx.value(self.re), ctx.value(self.im))
+    }
+}
+
+impl Scene {
+    /// manim's `generate_target`: a copy of the object's current state to modify
+    /// and pass to [`move_to_target`].
+    pub fn generate_target(&self, o: Obj) -> Mobject {
+        self.get(o)
+    }
+    /// A tracker animated in log space (manim's `ExponentialValueTracker`).
+    pub fn exponential_tracker(&mut self, value: f64) -> ExponentialValueTracker {
+        ExponentialValueTracker(self.tracker(value))
+    }
+    /// A complex-valued tracker (manim's `ComplexValueTracker`).
+    pub fn complex_tracker(&mut self, z: Vec2) -> ComplexValueTracker {
+        ComplexValueTracker {
+            re: self.tracker(z.x),
+            im: self.tracker(z.y),
+        }
+    }
+    pub fn complex_value(&self, k: ComplexValueTracker) -> Vec2 {
+        v2(self.value(k.re), self.value(k.im))
+    }
+    pub fn set_complex_value(&mut self, k: ComplexValueTracker, z: Vec2) {
+        self.set_value(k.re, z.x);
+        self.set_value(k.im, z.y);
+    }
+}
+
 // --------------------------------------------------------- scene helpers
 
 impl Scene {
@@ -555,7 +834,8 @@ pub fn elbow(size: f64, angle: f64) -> Mobject {
     polyline(&[v2(size, 0.0), v2(size, size), v2(0.0, size)]).rotate_about(angle, Vec2::ZERO)
 }
 
-/// Arc tangent to a circle from an external point (manim's `TangentialArc` simplified).
+/// The two tangent lines from an external point `p` to a circle (see
+/// [`crate::shapes::tangential_arc`] for manim's `TangentialArc`).
 pub fn tangent_lines_to_circle(p: Vec2, center: Vec2, r: f64) -> Mobject {
     let d = p.distance(center);
     if d <= r {
@@ -568,6 +848,159 @@ pub fn tangent_lines_to_circle(p: Vec2, center: Vec2, r: f64) -> Mobject {
         line(p, p + Vec2::from_angle(base + a) * len),
         line(p, p + Vec2::from_angle(base - a) * len),
     ])
+}
+
+/// Signed distance from `p` to a set of closed rings (positive inside, even-odd).
+fn ring_signed_distance(p: Vec2, rings: &[Vec<Vec2>]) -> f64 {
+    let mut inside = false;
+    let mut best = f64::INFINITY;
+    for ring in rings {
+        let n = ring.len();
+        if n < 2 {
+            continue;
+        }
+        for i in 0..n {
+            let a = ring[i];
+            let b = ring[(i + 1) % n];
+            if (a.y > p.y) != (b.y > p.y) && p.x < (b.x - a.x) * (p.y - a.y) / (b.y - a.y) + a.x {
+                inside = !inside;
+            }
+            let ab = b - a;
+            let t = ((p - a).dot(ab) / ab.length_sq().max(1e-300)).clamp(0.0, 1.0);
+            best = best.min(p.distance(a + ab * t));
+        }
+    }
+    if inside {
+        best
+    } else {
+        -best
+    }
+}
+
+/// Pole of inaccessibility of a polygon with holes: the interior point farthest
+/// from the outline, and that distance (Mapbox `polylabel`, used by manim's
+/// `LabeledPolygram`).
+pub fn polylabel(rings: &[Vec<Vec2>], precision: f64) -> (Vec2, f64) {
+    use std::cmp::Ordering;
+    use std::collections::BinaryHeap;
+    let pts: Vec<Vec2> = rings.iter().flatten().copied().collect();
+    let Some(first) = pts.first() else {
+        return (Vec2::ZERO, 0.0);
+    };
+    let mut b = Rect::point(*first);
+    for p in &pts {
+        b.include(*p);
+    }
+    let size = b.width().min(b.height());
+    if size <= 1e-12 {
+        return (b.min, 0.0);
+    }
+    struct Cell {
+        c: Vec2,
+        h: f64,
+        d: f64,
+        max: f64,
+    }
+    impl PartialEq for Cell {
+        fn eq(&self, o: &Self) -> bool {
+            self.max == o.max
+        }
+    }
+    impl Eq for Cell {}
+    impl PartialOrd for Cell {
+        fn partial_cmp(&self, o: &Self) -> Option<Ordering> {
+            Some(self.cmp(o))
+        }
+    }
+    impl Ord for Cell {
+        fn cmp(&self, o: &Self) -> Ordering {
+            self.max.partial_cmp(&o.max).unwrap_or(Ordering::Equal)
+        }
+    }
+    let cell = |c: Vec2, h: f64| {
+        let d = ring_signed_distance(c, rings);
+        Cell {
+            c,
+            h,
+            d,
+            max: d + h * std::f64::consts::SQRT_2,
+        }
+    };
+    let h = size / 2.0;
+    let mut heap = BinaryHeap::new();
+    let mut x = b.min.x;
+    while x < b.max.x {
+        let mut y = b.min.y;
+        while y < b.max.y {
+            heap.push(cell(v2(x + h, y + h), h));
+            y += size;
+        }
+        x += size;
+    }
+    // centroid guess
+    let mut best = cell(b.center(), 0.0);
+    let avg = pts.iter().fold(Vec2::ZERO, |a, p| a + *p) / pts.len() as f64;
+    let ac = cell(avg, 0.0);
+    if ac.d > best.d {
+        best = ac;
+    }
+    let precision = precision.max(1e-9);
+    let mut guard = 0;
+    while let Some(c) = heap.pop() {
+        if c.d > best.d {
+            best = Cell {
+                c: c.c,
+                h: c.h,
+                d: c.d,
+                max: c.max,
+            };
+        }
+        if c.max - best.d <= precision {
+            continue;
+        }
+        guard += 1;
+        if guard > 100_000 {
+            break;
+        }
+        let h = c.h / 2.0;
+        for (dx, dy) in [(-1.0, -1.0), (1.0, -1.0), (-1.0, 1.0), (1.0, 1.0)] {
+            heap.push(cell(c.c + v2(dx * h, dy * h), h));
+        }
+    }
+    (best.c, best.d.max(0.0))
+}
+
+/// Polygram with a label placed at its pole of inaccessibility (manim's
+/// `LabeledPolygram`). Children: [polygram, label].
+pub fn labeled_polygram(loops: &[Vec<Vec2>], label: Mobject, precision: f64) -> Mobject {
+    let (pole, _) = polylabel(loops, precision);
+    Mobject::group([polygram(loops), label.move_to(pole)])
+}
+
+/// Shaded round dot (manim's `TrueDot`, default radius 0.05).
+pub fn true_dot(p: Vec2, r: f64, color: Color) -> Mobject {
+    circle_at(p, r).no_stroke().sheen(color, v2(-1.0, 1.0))
+}
+
+/// Several glowing dots (manim's `GlowDots`).
+pub fn glow_dots(points: &[Vec2], r: f64, color: Color) -> Mobject {
+    Mobject::group(points.iter().map(|p| glow_dot(*p, r, color)))
+}
+
+/// A disc made of a cloud of tiny points on concentric rings (manim's `PointCloudDot`).
+/// `density` = points per unit length along each ring.
+pub fn point_cloud_dot(center: Vec2, radius: f64, color: Color, density: f64) -> Mobject {
+    let step = 1.0 / density.max(1.0);
+    let mut pts = vec![center];
+    let mut r = step;
+    while r <= radius + 1e-9 {
+        let n = ((TAU * r) / step).ceil().max(6.0) as usize;
+        for i in 0..n {
+            pts.push(center + Vec2::polar(r, TAU * i as f64 / n as f64));
+        }
+        r += step;
+    }
+    dot_cloud(&pts, step * 0.3, color)
 }
 
 /// Red X (manim's `Exmark`).
@@ -862,5 +1295,164 @@ mod tests {
                 .len(),
             4
         );
+    }
+
+    #[test]
+    fn change_speed_timing() {
+        let (w, k) = speed_profile(&[(0.0, 2.0), (1.0, 2.0)]);
+        assert!((k - 0.5).abs() < 1e-12);
+        assert!((w(0.3) - 0.3).abs() < 1e-9);
+        // speed 1 for the first half, then 0.5: 0.5 + 0.1·2/1.5 + 0.4·2/1
+        let (w, k) = speed_profile(&[(0.5, 1.0), (0.6, 0.5), (1.0, 0.5)]);
+        assert!((k - (0.5 + 0.2 / 1.5 + 0.8)).abs() < 1e-9, "{k}");
+        assert!((w(0.5 / k) - 0.5).abs() < 1e-9);
+        assert!((w(1.0) - 1.0).abs() < 1e-9);
+
+        let mut s = Scene::new();
+        let a = s.add(dot(Vec2::ZERO));
+        let t = s.tracker(0.0);
+        let d = s.play(change_speed(
+            together(vec![
+                a.animate()
+                    .shift(RIGHT * 4.0)
+                    .rate(Rate::Linear)
+                    .run_time(1.0)
+                    .build(),
+                t.to(1.0).rate(Rate::Linear),
+            ]),
+            &[(0.0, 2.0), (1.0, 2.0)],
+        ));
+        assert!((d - 0.5).abs() < 1e-9, "{d}");
+        assert!((s.eval_obj(a, 0.25, 0).center().x - 2.0).abs() < 1e-3);
+        assert!((s.tracker_value_at(t, 0.25) - 0.5).abs() < 1e-3);
+        assert!((s.get(a).center().x - 4.0).abs() < 1e-9);
+        // slow-down in the middle: position is continuous and monotone
+        let t0 = s.time();
+        let d = s.play(change_speed(
+            a.animate().shift(LEFT * 4.0).rate(Rate::Linear),
+            &[(0.4, 1.0), (0.5, 0.1), (0.6, 0.1), (1.0, 1.0)],
+        ));
+        assert!(d > 1.5);
+        let xs: Vec<f64> = (0..=20)
+            .map(|i| s.eval_obj(a, t0 + d * i as f64 / 20.0, 0).center().x)
+            .collect();
+        assert!(xs.windows(2).all(|w| w[1] <= w[0] + 1e-9));
+        assert!(xs[20].abs() < 1e-9);
+    }
+
+    #[test]
+    fn value_trackers() {
+        let mut s = Scene::new();
+        let e = s.exponential_tracker(1.0);
+        s.play(e.to(100.0).rate(Rate::Linear));
+        assert!((s.tracker_value_at(e.tracker(), 0.5) - 10.0).abs() < 1e-9);
+        assert!((s.value(e.0) - 100.0).abs() < 1e-9);
+        assert!((exp_lerp(-2.0, -8.0, 0.5) + 4.0).abs() < 1e-12);
+
+        let z = s.complex_tracker(v2(1.0, 0.0));
+        let t0 = s.time();
+        s.play(z.to(v2(0.0, 2.0)).rate(Rate::Linear));
+        assert!((s.complex_value(z) - v2(0.0, 2.0)).length() < 1e-9);
+        let mid = v2(
+            s.tracker_value_at(z.re, t0 + 0.5),
+            s.tracker_value_at(z.im, t0 + 0.5),
+        );
+        assert!((mid - v2(0.5, 1.0)).length() < 0.05);
+
+        let k = s.tracker(7.0);
+        let t0 = s.time();
+        s.play(k.count_in_from(0.0).rate(Rate::Linear));
+        assert!((s.tracker_value_at(k, t0 + 0.5) - 3.5).abs() < 1e-9);
+        assert!((s.value(k) - 7.0).abs() < 1e-9);
+        let t0 = s.time();
+        s.play(k.changing(|a| a * a * 10.0).rate(Rate::Linear));
+        assert!((s.tracker_value_at(k, t0 + 0.5) - 2.5).abs() < 1e-9);
+        assert!((s.value(k) - 10.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn overlay_and_misc_anims() {
+        let mut s = Scene::new();
+        let a = s.add(square(1.0));
+        let n0 = s.frame_mobjects(0.0).len();
+        s.play(flash_around(a));
+        assert_eq!(s.frame_mobjects(0.5).len(), n0 + 1);
+        assert_eq!(s.frame_mobjects(1.5).len(), n0);
+        for anim in [
+            flash_under(a, BLUE),
+            show_passing_flash_around(a, YELLOW),
+            show_creation_then_destruction_around(a, RED),
+            show_creation_then_fade_around(a, GREEN),
+            v_show_passing_flash(a, 0.3, 0.05),
+            fade_to_color(a, RED),
+            wiggle_out_then_in(a, 1.1, 0.03, 6.0, Some(v2(1.0, 0.0))),
+            apply_function_to_center(a, |p| p + v2(1.0, 1.0)),
+            clockwise_transform(a, circle(0.5).shift(LEFT)),
+        ] {
+            s.play(anim);
+        }
+        assert!((s.get(a).center() - v2(-1.0, 0.0)).length() < 1e-6);
+        let mut tgt = s.generate_target(a);
+        tgt = tgt.shift(UP * 2.0);
+        s.play(move_to_target(a, tgt));
+        assert!((s.get(a).center() - v2(-1.0, 2.0)).length() < 1e-6);
+        let b = s.register(circle(1.0));
+        s.play(flashy_fade_in(b));
+        assert!(s.is_present(b));
+        s.play(v_fade_out(b));
+        assert!(!s.is_present(b));
+        let c = s.register(triangle(1.0));
+        s.play(v_fade_in(c));
+        s.play(v_fade_in_then_out(a));
+        // transform between two running animations
+        let x = s.add(square(1.0));
+        let y = s.register(circle(1.0).shift(RIGHT * 3.0));
+        s.play(transform_animations(
+            x.animate().shift(UP),
+            y.animate().shift(DOWN),
+        ));
+        assert!((s.get(x).center() - v2(3.0, -1.0)).length() < 1e-6);
+    }
+
+    #[test]
+    fn v_flash_tapers_widths() {
+        let m = line(v2(-2.0, 0.0), v2(2.0, 0.0)).stroke(WHITE, 8.0);
+        let f = v_passing_flash_frame(&m, 0.5, 0.3, 0.0);
+        let w: Vec<f32> = f.leaves().iter().map(|l| l.style.stroke_width).collect();
+        assert!(w.len() > 10);
+        let max = w.iter().cloned().fold(0.0, f32::max);
+        assert!(max > 7.5 && w[0] < 1.0);
+        assert!(v_passing_flash_frame(&m, 0.0, 0.3, 0.0).leaf_count() == 0);
+        let c = passing_flash_partial(&m, 0.5, 0.2);
+        assert!((c.width() - 0.8).abs() < 1e-6);
+    }
+
+    #[test]
+    fn polylabel_and_polygram() {
+        let sq = vec![v2(0.0, 0.0), v2(4.0, 0.0), v2(4.0, 2.0), v2(0.0, 2.0)];
+        let (p, r) = polylabel(std::slice::from_ref(&sq), 0.001);
+        assert!(
+            (r - 1.0).abs() < 0.01 && (p.y - 1.0).abs() < 0.02,
+            "{p:?} {r}"
+        );
+        // L shape: the pole sits in the thick part
+        let l = vec![
+            v2(0.0, 0.0),
+            v2(6.0, 0.0),
+            v2(6.0, 1.0),
+            v2(3.0, 1.0),
+            v2(3.0, 3.0),
+            v2(0.0, 3.0),
+        ];
+        let (p, r) = polylabel(std::slice::from_ref(&l), 0.001);
+        assert!(p.x < 3.0 && (r - 1.5).abs() < 0.02, "{p:?} {r}");
+        let lp = labeled_polygram(&[l], crate::text::text("L"), 0.01);
+        assert!((lp.children[1].center() - p).length() < 1e-6);
+        assert_eq!(
+            glow_dots(&[Vec2::ZERO, RIGHT], 0.1, YELLOW).children.len(),
+            2
+        );
+        assert!(point_cloud_dot(Vec2::ZERO, 0.5, WHITE, 20.0).children.len() > 30);
+        assert!(true_dot(Vec2::ZERO, 0.05, WHITE).width() > 0.09);
     }
 }
