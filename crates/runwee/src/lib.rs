@@ -36,6 +36,7 @@ pub mod scene;
 pub mod sfx;
 pub mod shapes;
 pub mod sim;
+pub mod solution;
 pub mod style;
 pub mod tex;
 pub mod text;
@@ -70,6 +71,7 @@ pub mod prelude {
     pub use crate::sfx;
     pub use crate::shapes::*;
     pub use crate::sim;
+    pub use crate::solution::*;
     pub use crate::style::*;
     pub use crate::tex::{chem, tex, tex_parts, tex_sized, tex_text, MathTex};
     pub use crate::text::*;

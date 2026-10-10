@@ -120,6 +120,10 @@ pub enum AnimKind {
         obj: Obj,
         target: Mobject,
     },
+    TransformMatchingFromCopy {
+        from: Obj,
+        to: Obj,
+    },
     TransformMatching {
         obj: Obj,
         target: Mobject,
@@ -406,6 +410,11 @@ pub fn transform_matching(o: Obj, target: Mobject) -> Animation {
 /// `TransformMatchingShapes`).
 pub fn transform_matching_shapes(o: Obj, target: Mobject) -> Animation {
     Animation::new(AnimKind::TransformMatchingShapes { obj: o, target })
+}
+/// Build `to` out of a copy of `from`, sliding glyphs that match (by character)
+/// and fading the rest — the clean way to animate algebra steps.
+pub fn transform_matching_from_copy(from: Obj, to: Obj) -> Animation {
+    Animation::new(AnimKind::TransformMatchingFromCopy { from, to })
 }
 /// Apply the same animation constructor to many objects with lag (manim's `LaggedStartMap`).
 pub fn lagged_start_map(objs: &[Obj], f: impl Fn(Obj) -> Animation, lag_ratio: f64) -> Animation {

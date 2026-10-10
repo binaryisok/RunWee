@@ -900,6 +900,25 @@ impl Scene {
                 let src = self.snapshot(*obj, ctx, off);
                 push(ctx, *obj, false, matching_fn(&src, target));
             }
+            AnimKind::TransformMatchingFromCopy { from, to } => {
+                let src = self.snapshot(*from, ctx, off).flattened();
+                let dst = self.snapshot(*to, ctx, off);
+                ctx.introduce(*to, self.is_present(*to));
+                let f = matching_fn(&src, &dst.flattened());
+                let target = Arc::new(dst);
+                push(
+                    ctx,
+                    *to,
+                    true,
+                    Arc::new(move |m, a, r| {
+                        if a >= 1.0 {
+                            (*target).clone()
+                        } else {
+                            f(m, a, r)
+                        }
+                    }),
+                );
+            }
             AnimKind::TransformMatchingShapes { obj, target } => {
                 ctx.introduce(*obj, self.is_present(*obj));
                 let src = self.snapshot(*obj, ctx, off).flattened();
