@@ -13,6 +13,32 @@ React-specific hooks, Tailwind, Skia/Three/Rive/Lottie bindings) and manim's int
 OpenGL window. RunWee covers the same ground natively (fast parallel renderer, stills at any
 time, `.rhai` scripts instead of React components).
 
+## Audit summary
+
+Re-checked against freshly cloned sources (October 2026) by listing every class and export and
+matching each one to RunWee code:
+
+| Source | Items | In RunWee | Not ported |
+|---|---|---|---|
+| manim (3b1b `manimlib/animation`, `manimlib/mobject`) + ManimCommunity (`manim/animation`, `manim/mobject`), deduplicated, OpenGL duplicates removed | 319 classes | 298 | 21 interactive/legacy (see below) |
+| `@remotion/transitions` presentations | 20 | 20 | — |
+| `@remotion/effects` | 74 | 74 | — |
+| `@remotion/shapes`, `paths`, `noise`, `layout-utils`, `motion-blur`, `captions`, `media-utils`, `light-leaks`, `starburst`, `rounded-text-box`, `rough-notation`, `gif` | all exports | all | — |
+| `@remotion/sfx` | 32 named clips | 11 of the names (whip, whoosh, page turn, UI switch, mouse click, modern and old shutter, ding, vine boom, price-is-right fail, record scratch), all synthesised; RunWee has about 30 sounds in total | 21 meme recordings (copyrighted audio; load any file with `sound_file`) |
+
+**manim classes not ported (21):** interactive-window widgets (Button, Checkbox, Slider,
+ColorSliders, ControlPanel, ControlMobject, EnableDisableButton, LinearNumberSlider,
+MotionMobject, Textbox), legacy duplicates (OldTex, OldTexText, OldSpeechBubble,
+OldThoughtBubble), Typst/MathTypst (a different typesetting engine; RunWee has its own TeX),
+VectorizedEarth (3b1b asset), Sprite, ImageMobjectFromCamera, ManimBanner, and the abstract
+base CoordinateSystem.
+
+**Remotion pieces that don't apply to a native renderer:** Player, Studio, Lambda/Cloud Run/
+serverless, the bundler/CLI/React hooks, Tailwind, GSAP, and the Three.js / Skia / Rive / Lottie
+bindings. RunWee has its own 3D engine and renders frames directly. Two gaps worth knowing
+about: Lottie files can't be played, and speech-to-text captions (Remotion's Whisper packages)
+aren't built in. RunWee captions come from the narration text, or from `.srt`/`.json` files.
+
 ## manim — animations
 
 | manim | RunWee | Phase |
@@ -82,7 +108,7 @@ time, `.rhai` scripts instead of React components).
 | [x] `<Img>`, `<Video>`/`OffthreadVideo`, `<Gif>`, `staticFile` | `image_mobject`, `VideoSource` / `add_video`, `Gif` / `add_gif`, plain paths | 8 |
 | [x] `<Audio>` with volume curve, trim, playbackRate, loop | `audio::*` | 7 |
 | [x] `@remotion/transitions`: fade, slide, wipe, flip, clock-wipe, iris, none, cross-zoom, zoom-in-out, push-cut, swap, dissolve, blur-slide, linear-blur, zoom-blur, ripple, crosswarp, dreamy-zoom, film-burn, book-flip | `transition::*` | 8 |
-| [x] `@remotion/effects` (CPU subset): blur, brightness, contrast, saturation, hue, grayscale, invert, sepia/duotone, tint, vignette, pixelate, noise, scanlines, halftone, chromatic aberration, glow, drop-shadow, zoom-blur, mirror, wave, fisheye, emboss, levels, exposure, posterize | `effects::*` | 8 |
+| [x] `@remotion/effects`: all 74, including colour grading (vibrance, white balance, shadows/highlights, colour correction, LUT `.cube` files, colour key, thermal, duotone), blur family (gaussian, axis, region, linear/radial progressive blur and pixelate, zoom blur), geometry (barrel, fisheye, corner pin, skew, scale, translate, mirror, wave(s), tile, pattern, tear, noise displacement), alpha (drop shadow, outline, roughen edges, shrinkwrap), reveals (evolve, pixel dissolve, venetian blinds, shine, light trail) and generators (checkerboard, gridlines, rings, lines, zigzag, dot grid, starburst, light leak, halftone, contour/liquid contours, paper, burlap, flannel) | `Effect::*`, `Effect::from_name("kebab-name", amount)`; scripts: `effect`, `effect_anim`, `effect_between`, `lut` | 8, 16 |
 | [x] `@remotion/shapes`: arrow, callout, circle, ellipse, heart, pie, polygon, rect, spark, star, triangle | `block_arrow`, `callout`, `heart`, `pie`, `spark`, `shapes::*` | 8 |
 | [x] `@remotion/paths`: evolvePath, interpolatePath, warpPath, getLength, getPointAtLength, getTangentAtLength, reversePath, parsePath | `util::*`, `Path::length`, `Path::reversed` | 8 |
 | [x] `@remotion/layout-utils`: measureText, fitText, fitTextOnNLines, fillTextBox | `measure_text`, `fit_text`, `fit_text_on_n_lines`, `FillTextBox` / `fill_text_box` | 8 |
@@ -104,3 +130,24 @@ time, `.rhai` scripts instead of React components).
 | [x] Biology: animal/plant cells, DNA/RNA, neuron with action potential, mitosis, virus, bacterium, Punnett squares, population models | `biology` | 12 |
 | [x] Question-solving videos: given/find panel, worked steps with glyph-matching morphs, auto-scrolling work, boxed answer, narration, quizzes, problem generators | `solution` | 13 |
 | [x] `.rhai` scene scripts rendered without compiling, JSON props, multi-scene movies | `runwee` CLI | 14 |
+| [x] Backgrounds: solid, gradients (linear, radial, four-corner), image/video (cover/contain/tile, dim), patterns (grid, graph paper, dots, ruled, notebook, checker, stripes, crosses, isometric), animated (aurora, starfield, bokeh, flowing noise), layers, cross-fades between backgrounds; 28 presets | `Background`, `Scene::set_background`, `background_fade`; scripts: `background(...)`; CLI `--background` | 16 |
+| [x] Themes: one call restyles a whole video; light themes remap colours automatically so existing scenes stay readable | `Theme`, `Scene::theme`; scripts: `theme("whiteboard")`; CLI `--theme` | 16 |
+
+## Added in the October 2026 re-audit (phase 16)
+
+manim: `flash_around`, `flash_under`, `show_passing_flash_around`,
+`show_creation_then_destruction_around`, `show_creation_then_fade_around`, `v_show_passing_flash`,
+`change_speed` / `time_warp`, `flashy_fade_in`, `fade_to_color`, `clockwise_transform`,
+`counterclockwise_transform`, `wiggle_out_then_in`, `v_fade_in/out/in_then_out`,
+`generate_target` + `move_to_target`, `apply_function_to_center`, `transform_animations`,
+`Tracker::changing / count_in_from / with`, `exponential_tracker`, `complex_tracker`, `arc_brace`,
+`line_brace`, `tangential_arc`, `arc_polygon_from_arcs`, `labeled_polygram`, outline arrow tips,
+`curved_double_arrow`, `small_dot`, `true_dot`, `glow_dots`, `point_cloud_dot`, `dartboard`,
+`video_icon`, `bubble`, `double_speech_bubble`, `unit_interval`, `integer`, `integer_matrix`,
+`mobject_matrix`, `integer_table`, `decimal_table`, `mobject_table`, `AnimatedStreamLines`,
+`time_varying_vector_field`, `digraph`, `textured_surface`, `three_d_model` (.obj), `convex_hull_3d`,
+`square3d`, `disk3d`, `v_cube`, `v_prism`, `prismify`, `surface_mesh`.
+
+Remotion: 45 new effects (above), 13 new synthesised sounds (record scratch, old shutter, sad
+trombone, ta-da, coin, laser, sparkle, level-up, countdown beeps, heartbeat, drum roll), and the
+background/theme system.

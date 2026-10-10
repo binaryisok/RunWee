@@ -78,6 +78,25 @@ The Rust examples live in [`crates/runwee/examples`](crates/runwee/examples):
 cargo run --release -p runwee --example physics_lab -- -q high
 ```
 
+## Backgrounds and themes
+
+```rust
+theme("whiteboard");                  // background plus automatic colour adaptation
+background("aurora");                 // or: "blueprint", "graph-paper", "chalkboard", "#1e1e2e", …
+background_fade("starfield", 1.5);    // cross-fade mid-scene
+background_gradient(["#0f2027", "#2c5364"], -60);
+background_image("lab.jpg", 0.4);     // dimmed so content stays readable
+background_pattern("dots", "#0E1117", "#2A3442", 0.05);
+```
+
+There are 28 presets: dark, black/manim, white, light, paper, chalkboard, whiteboard,
+blueprint, graph-paper, grid, dots, notebook, terminal, midnight, sunset, ocean, forest, candy,
+spotlight, nebula, aurora, starfield, bokeh, flow and lava.
+
+Light themes darken white text, greys and pastel accents at draw time, so a scene written for a
+dark background works unchanged. Any script can be restyled from the command line:
+`runwee render x.rhai --theme chalkboard` or `--background photo.jpg`.
+
 ## CLI
 
 ```
@@ -86,6 +105,8 @@ runwee render <script.rhai> [options]
     -q, --quality <q>       low (480p15) | medium (720p30) | high (1080p60) | 2k (default) | 4k
     --still <t>             render one PNG at time t
     --props <json>          JSON object available to the script as PROPS
+    --theme <name>          restyle every scene (any background preset)
+    --background <name>     preset, colour, or image/video file
     --vertical              9:16 portrait frame (shorts / reels)
     --from <t> --to <t>     render part of the timeline
     --transparent           keep alpha (webm vp9 / mov prores 4444 / png)
@@ -103,7 +124,7 @@ runwee api                  list every script function signature
 | Timing | manim rate functions, Remotion easings, cubic Bézier, `spring()` / `measure_spring`, `interpolate` with extrapolation, `Rate::Steps`. |
 | Text & math | Shaped text with kerning, markup, wrapping and code blocks; a TeX subset (fractions, roots, scripts, big operators, delimiters, matrices, cases, aligned, accents, colours); `\ce{}` chemistry; MathTex parts. |
 | Graphing | NumberLine, Axes, NumberPlane, Complex and Polar planes, function, parametric and implicit plots, area, Riemann sums, tangents, vector and stream fields, bar and pie charts, tables, matrices, networks. |
-| Look | Linear and radial gradients, glow, shadows, dashes, sheen, blend modes, and 29 post effects (grain, vignette, blur, chromatic aberration, halftone, scanlines, ...). |
+| Look | Linear and radial gradients, glow, shadows, dashes, sheen and blend modes. All 74 Remotion effects, plus RunWee's own (LUT grading, colour key, light leaks, paper texture, shine, pixel dissolve, ...); any of them can be animated over time. 28 background presets and light/dark themes. |
 | Composition | `Movie` with 20 transitions (fade, slide, wipe, iris, clock-wipe, flip, cross-zoom, ripple, film-burn, ...), Sequence, Layers, Loop, Freeze, Speed, motion blur, and image, SVG, GIF and video assets. |
 | Audio | WAV and ffmpeg decode, volume curves, trims and loops, 17 synthesised SFX, an ambient music bed, a mixer with soft limiter, waveform and FFT spectrum visualisers. |
 | Captions | SRT/VTT parse and serialise, TikTok-style word grouping, max chars per line, three burned-in styles, soft subtitles. |

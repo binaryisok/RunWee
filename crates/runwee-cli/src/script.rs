@@ -1535,7 +1535,10 @@ fn register_scene(engine: &mut Engine, st: Shared) {
             "exposure" => Effect::Exposure(x),
             "fisheye" => Effect::Fisheye(x),
             "sharpen" => Effect::Sharpen(x),
-            _ => return Err(format!("unknown effect '{name}'").into()),
+            // Every other Remotion @remotion/effects name (and aliases).
+            _ => {
+                Effect::from_name(name, f(&v)).ok_or_else(|| format!("unknown effect '{name}'"))?
+            }
         };
         s!(st1, |sc: &mut Scene| {
             if matches!(e, Effect::Grain { .. }) {
@@ -1549,6 +1552,67 @@ fn register_scene(engine: &mut Engine, st: Shared) {
                 sc.effects(vec![e.clone()]);
             }
         });
+        Ok(())
+    });
+    // Effect whose main amount animates from `a` to `b` over [start, start + dur]
+    // (e.g. effect_anim("evolve", 0.0, 1.0, time(), 2.0) or a "shine" sweep).
+    let st1 = st.clone();
+    engine.register_fn(
+        "effect_anim",
+        move |name: &str, a: N, b: N, start: N, dur: N| -> R<()> {
+            let (a, b, start, dur) = (f(&a), f(&b), f(&start), f(&dur).max(1e-6));
+            if Effect::from_name(name, a).is_none() {
+                return Err(format!("unknown effect '{name}'").into());
+            }
+            let name = name.to_string();
+            s!(st1, |sc: &mut Scene| sc.post_effect(
+                start,
+                f64::INFINITY,
+                move |t| {
+                    let k = Rate::Smooth.eval((t / dur).clamp(0.0, 1.0));
+                    Effect::from_name(&name, a + (b - a) * k)
+                        .into_iter()
+                        .collect()
+                }
+            ));
+            Ok(())
+        },
+    );
+    // Effect only between two times.
+    let st1 = st.clone();
+    engine.register_fn(
+        "effect_between",
+        move |name: &str, v: N, from: N, to: N| -> R<()> {
+            let e =
+                Effect::from_name(name, f(&v)).ok_or_else(|| format!("unknown effect '{name}'"))?;
+            s!(st1, |sc: &mut Scene| sc.post_effect(
+                f(&from),
+                f(&to),
+                move |_| vec![e.clone()]
+            ));
+            Ok(())
+        },
+    );
+    // Colour grade with an Adobe .cube LUT file, mixed by `amount`.
+    let st1 = st.clone();
+    engine.register_fn("lut", move |path: &str, amount: N| -> R<()> {
+        use runwee::effects::Lut;
+        let loaded = Lut::load(path).map_err(|e| e.to_string())?;
+        let k = (f(&amount) as f32).clamp(0.0, 1.0);
+        let lut = if k >= 0.999 {
+            loaded
+        } else {
+            Lut::from_fn(33, move |c| {
+                let g = loaded.lookup(c);
+                [
+                    c[0] + (g[0] - c[0]) * k,
+                    c[1] + (g[1] - c[1]) * k,
+                    c[2] + (g[2] - c[2]) * k,
+                ]
+            })
+        };
+        let e = Effect::Lut(std::sync::Arc::new(lut));
+        s!(st1, |sc: &mut Scene| sc.effects(vec![e]));
         Ok(())
     });
     // movie building
