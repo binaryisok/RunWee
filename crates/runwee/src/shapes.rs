@@ -368,14 +368,14 @@ pub fn brace_between(a: Vec2, b: Vec2) -> Mobject {
     let half = w / 2.0;
     let centre = |x: f64| -> f64 {
         // left half profile mirrored for right half
-        let x = if x > half { w - x } else { x };
+        let x = (if x > half { w - x } else { x }).clamp(0.0, half);
         let y1 = depth * 0.5;
         if x < r {
             // quarter-ellipse rise from 0 to y1
-            let u = x / r;
+            let u = (x / r).clamp(0.0, 1.0);
             y1 * (1.0 - (1.0 - u) * (1.0 - u)).sqrt()
         } else if x > half - r {
-            let u = (half - x) / r;
+            let u = ((half - x) / r).clamp(0.0, 1.0);
             y1 + (depth - y1) * (1.0 - (1.0 - (1.0 - u) * (1.0 - u)).sqrt())
         } else {
             y1
@@ -388,7 +388,7 @@ pub fn brace_between(a: Vec2, b: Vec2) -> Mobject {
         })
         .collect();
     let thickness = |x: f64| -> f64 {
-        let u = if x > half { w - x } else { x } / half; // 0 at ends, 1 at middle
+        let u = (if x > half { w - x } else { x }) / half; // 0 at ends, 1 at middle
         thick * (0.25 + 0.75 * (u * PI).sin().abs().max(0.0)).max(0.3)
     };
     let mut upper = Vec::new();

@@ -15,6 +15,7 @@ pub mod audio;
 pub mod captions;
 pub mod color;
 pub mod effects;
+pub mod fonts;
 pub mod math;
 pub mod mobject;
 pub mod output;
@@ -24,6 +25,8 @@ pub mod render;
 pub mod scene;
 pub mod shapes;
 pub mod style;
+pub mod tex;
+pub mod text;
 
 /// Everything needed to write scenes.
 pub mod prelude {
@@ -38,4 +41,6 @@ pub mod prelude {
     pub use crate::scene::*;
     pub use crate::shapes::*;
     pub use crate::style::*;
+    pub use crate::tex::{chem, tex, tex_parts, tex_sized, tex_text, MathTex};
+    pub use crate::text::*;
 }

@@ -180,6 +180,14 @@ impl<'a> Canvas<'a> {
         let mut pb = sk::PathBuilder::new();
         let xf = Affine::translate(offset).then_after(self.xf);
         for sp in &m.path.subpaths {
+            if !sp.start.is_finite()
+                || sp
+                    .segs
+                    .iter()
+                    .any(|c| !(c.c1.is_finite() && c.c2.is_finite() && c.p.is_finite()))
+            {
+                continue;
+            }
             let p = xf.apply(sp.start);
             pb.move_to(p.x as f32, p.y as f32);
             if sp.segs.is_empty() {
