@@ -116,6 +116,10 @@ pub enum AnimKind {
         obj: Obj,
         target: Mobject,
     },
+    TransformMatchingShapes {
+        obj: Obj,
+        target: Mobject,
+    },
     TransformMatching {
         obj: Obj,
         target: Mobject,
@@ -397,6 +401,15 @@ pub fn fade_transform(o: Obj, target: Mobject) -> Animation {
 /// Morph matching parts by tag (TeX parts): manim's `TransformMatchingTex`.
 pub fn transform_matching(o: Obj, target: Mobject) -> Animation {
     Animation::new(AnimKind::TransformMatching { obj: o, target })
+}
+/// Morph matching individual glyphs/pieces by tag; the rest fade (manim's
+/// `TransformMatchingShapes`).
+pub fn transform_matching_shapes(o: Obj, target: Mobject) -> Animation {
+    Animation::new(AnimKind::TransformMatchingShapes { obj: o, target })
+}
+/// Apply the same animation constructor to many objects with lag (manim's `LaggedStartMap`).
+pub fn lagged_start_map(objs: &[Obj], f: impl Fn(Obj) -> Animation, lag_ratio: f64) -> Animation {
+    lagged_start(objs.iter().map(|o| f(*o)).collect(), lag_ratio)
 }
 pub fn rotate(o: Obj, angle: f64) -> Animation {
     Animation::new(AnimKind::Rotate {

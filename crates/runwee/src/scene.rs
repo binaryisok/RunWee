@@ -65,6 +65,13 @@ impl FrameCtx<'_> {
     pub fn camera(&self) -> Camera {
         self.scene.camera_at(self.t)
     }
+    /// State of another object at an arbitrary time (for trails/history).
+    pub fn get_at(&self, o: Obj, t: f64) -> Mobject {
+        if self.depth > 16 {
+            return Mobject::empty();
+        }
+        self.scene.eval_obj(o, t, self.depth + 1)
+    }
 }
 
 pub type DynFn = Arc<dyn Fn(&FrameCtx) -> Mobject + Send + Sync>;
@@ -194,6 +201,7 @@ pub struct Scene {
     /// Extra time appended at the end (avoids cutting the last frame).
     pub tail: f64,
     post_effects: Vec<(f64, f64, PostFn)>,
+    pub(crate) saved: std::collections::HashMap<Obj, Mobject>,
 }
 
 type PostFn = Arc<dyn Fn(f64) -> Vec<crate::effects::Effect> + Send + Sync>;
@@ -226,6 +234,7 @@ impl Scene {
             captions: Default::default(),
             tail: 0.0,
             post_effects: Vec::new(),
+            saved: Default::default(),
         }
     }
     /// Vertical 9:16 scene (shorts / reels), 14.22 units tall, 8 wide.
@@ -257,6 +266,12 @@ impl Scene {
             name: name.to_string(),
             time: self.time,
         });
+    }
+    /// Move the cursor back to an earlier time so following animations overlap work
+    /// already scheduled (used for background camera motion). Only rewind over
+    /// objects/trackers you don't animate again in that window.
+    pub fn rewind_to(&mut self, t: f64) {
+        self.time = t.max(0.0);
     }
     /// Move the cursor to an absolute time (only forward).
     pub fn seek(&mut self, t: f64) {
@@ -884,6 +899,11 @@ impl Scene {
                 ctx.introduce(*obj, self.is_present(*obj));
                 let src = self.snapshot(*obj, ctx, off);
                 push(ctx, *obj, false, matching_fn(&src, target));
+            }
+            AnimKind::TransformMatchingShapes { obj, target } => {
+                ctx.introduce(*obj, self.is_present(*obj));
+                let src = self.snapshot(*obj, ctx, off).flattened();
+                push(ctx, *obj, false, matching_fn(&src, &target.flattened()));
             }
             AnimKind::Animate { obj, ops } => {
                 ctx.introduce(*obj, self.is_present(*obj));
