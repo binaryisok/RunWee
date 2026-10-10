@@ -16,6 +16,7 @@ pub mod assets;
 pub mod audio;
 pub mod boolean;
 pub mod captions;
+pub mod chemistry;
 pub mod color;
 pub mod compose;
 pub mod deco;
@@ -49,6 +50,7 @@ pub mod prelude {
     pub use crate::audio::{AudioClip, AudioData};
     pub use crate::boolean::*;
     pub use crate::captions::{CaptionLook, CaptionStyle, Cue};
+    pub use crate::chemistry;
     pub use crate::color::*;
     pub use crate::compose::*;
     pub use crate::deco::*;
