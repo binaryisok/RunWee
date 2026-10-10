@@ -12,11 +12,19 @@
 
 pub mod color;
 pub mod math;
+pub mod mobject;
+pub mod path;
 pub mod rate;
+pub mod shapes;
+pub mod style;
 
 /// Everything needed to write scenes.
 pub mod prelude {
     pub use crate::color::*;
     pub use crate::math::*;
+    pub use crate::mobject::*;
+    pub use crate::path::*;
     pub use crate::rate::*;
+    pub use crate::shapes::*;
+    pub use crate::style::*;
 }
