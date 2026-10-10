@@ -260,6 +260,184 @@ pub fn notification() -> Arc<AudioData> {
 
 /// Look up an effect by name (for scripts): click, mouse_click, pop, tick, ding, success,
 /// error, whoosh, whip, switch, page_turn, shutter, typing, boom, swoosh_up, swoosh_down, notification.
+/// Vinyl record scratch (a pitch-swept noisy rasp, forward then back).
+pub fn record_scratch() -> Arc<AudioData> {
+    let mut rng = Rng::new(41);
+    let mut lp = Lp(0.0);
+    let mut phase = 0.0f32;
+    render(0.45, move |t| {
+        // Two strokes: fast forward pull, then a slower pull back.
+        let (u, dir) = if t < 0.18 {
+            (t / 0.18, 1.0)
+        } else {
+            ((t - 0.18) / 0.27, -1.0)
+        };
+        let speed = (PI * u).sin() * dir;
+        phase += (300.0 + 900.0 * speed.abs()) / SR;
+        let tone = (2.0 * PI * phase).sin() * 0.5;
+        let noise = lp.run(rng.range(-1.0, 1.0) as f32, 1200.0 + 2500.0 * speed.abs());
+        let e = env_ad(t, 0.005, 0.5) * (1.0 - (t / 0.45).powi(4));
+        0.8 * e * (noise * 1.6 + tone * speed.abs())
+    })
+}
+
+/// Old mechanical camera: shutter clack followed by a film-advance whir.
+pub fn shutter_old() -> Arc<AudioData> {
+    let mut rng = Rng::new(43);
+    let mut lp = Lp(0.0);
+    render(0.9, move |t| {
+        let clack = env_ad(t, 0.001, 0.02)
+            + 0.6 * env_ad((t - 0.07).max(0.0), 0.001, 0.03) * (t > 0.07) as u8 as f32;
+        let n = rng.range(-1.0, 1.0) as f32;
+        let whir = if t > 0.25 {
+            let u = t - 0.25;
+            let ratchet = ((u * 38.0).fract() < 0.25) as u8 as f32;
+            0.35 * ratchet * lp.run(n, 3000.0) * ((0.65 - u) / 0.1).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        0.8 * clack * n + whir
+    })
+}
+
+/// "Sad trombone" fail: four descending wah notes.
+pub fn fail() -> Arc<AudioData> {
+    let notes = [midi(58.0), midi(57.0), midi(56.0), midi(55.0)];
+    let mut phase = 0.0f32;
+    render(1.9, move |t| {
+        let i = ((t / 0.38) as usize).min(3);
+        let local = t - i as f32 * 0.38;
+        let len = if i == 3 { 0.75 } else { 0.36 };
+        let vib = if i == 3 {
+            1.0 + 0.012 * (2.0 * PI * 6.0 * local).sin()
+        } else {
+            1.0
+        };
+        phase += notes[i] * vib / SR;
+        let x = 2.0 * PI * phase;
+        // Brassy: a few odd/even harmonics, with a "wah" brightness envelope.
+        let wah = 0.4 + 0.6 * (local / 0.12).min(1.0);
+        let v = x.sin()
+            + 0.5 * wah * (2.0 * x).sin()
+            + 0.3 * wah * (3.0 * x).sin()
+            + 0.15 * wah * (4.0 * x).sin();
+        let e = (local / 0.02).min(1.0) * ((len - local) / 0.05).clamp(0.0, 1.0);
+        0.22 * e * v
+    })
+}
+
+/// Bright rising "ta-da" arpeggio (a correct answer, a reveal).
+pub fn tada() -> Arc<AudioData> {
+    let notes = [midi(72.0), midi(76.0), midi(79.0), midi(84.0)];
+    render(1.3, move |t| {
+        let mut v = 0.0;
+        for (i, f) in notes.iter().enumerate() {
+            let start = i as f32 * 0.07;
+            if t >= start {
+                let u = t - start;
+                let e = env_ad(u, 0.005, if i == 3 { 0.6 } else { 0.25 });
+                v += e * ((2.0 * PI * f * u).sin() + 0.3 * (4.0 * PI * f * u).sin());
+            }
+        }
+        0.18 * v
+    })
+}
+
+/// Arcade coin pickup (two quick square-ish blips).
+pub fn coin() -> Arc<AudioData> {
+    render(0.35, |t| {
+        let f = if t < 0.07 { midi(83.0) } else { midi(88.0) };
+        let e = if t < 0.07 {
+            1.0
+        } else {
+            env_ad(t - 0.07, 0.002, 0.12)
+        };
+        0.18 * e * (2.0 * PI * f * t).sin().signum() * 0.6
+    })
+}
+
+/// Sci-fi laser zap (fast downward pitch sweep).
+pub fn laser() -> Arc<AudioData> {
+    let mut phase = 0.0f32;
+    render(0.3, move |t| {
+        let f = 1800.0 * (-t * 12.0).exp() + 200.0;
+        phase += f / SR;
+        0.3 * env_ad(t, 0.002, 0.12) * (2.0 * PI * phase).sin()
+    })
+}
+
+/// Magical sparkle: a shimmer of random high bell partials.
+pub fn sparkle() -> Arc<AudioData> {
+    let mut rng = Rng::new(47);
+    let bells: Vec<(f32, f32)> = (0..14)
+        .map(|i| (i as f32 * 0.045, 1800.0 + rng.range(0.0, 2600.0) as f32))
+        .collect();
+    render(1.1, move |t| {
+        let mut v = 0.0;
+        for (start, f) in &bells {
+            if t >= *start {
+                let u = t - start;
+                v += env_ad(u, 0.002, 0.18) * (2.0 * PI * f * u).sin();
+            }
+        }
+        0.08 * v
+    })
+}
+
+/// Level-up / power-up: rising square-wave run.
+pub fn level_up() -> Arc<AudioData> {
+    render(0.7, |t| {
+        let step = ((t / 0.06) as usize).min(9);
+        let f = midi(60.0 + [0.0, 4.0, 7.0, 12.0, 16.0, 19.0, 24.0, 28.0, 31.0, 36.0][step]);
+        let e = ((0.7 - t) / 0.15).clamp(0.0, 1.0);
+        0.12 * e * (2.0 * PI * f * t).sin().signum()
+    })
+}
+
+/// Countdown beep (`final_beep` = the longer, higher last beep).
+pub fn countdown_beep(final_beep: bool) -> Arc<AudioData> {
+    let (f, len) = if final_beep {
+        (1320.0, 0.6)
+    } else {
+        (880.0, 0.15)
+    };
+    render(len, move |t| {
+        let e = (t / 0.005).min(1.0) * ((len - t) / 0.02).clamp(0.0, 1.0);
+        0.25 * e * (2.0 * PI * f * t).sin()
+    })
+}
+
+/// Heartbeat "lub-dub" (one beat).
+pub fn heartbeat() -> Arc<AudioData> {
+    render(0.8, |t| {
+        let thump = |u: f32, f: f32| {
+            if u >= 0.0 {
+                env_ad(u, 0.004, 0.06) * (2.0 * PI * f * u).sin()
+            } else {
+                0.0
+            }
+        };
+        0.7 * (thump(t, 55.0) + 0.7 * thump(t - 0.2, 48.0))
+    })
+}
+
+/// Snare drum roll for `secs` seconds ending with an accent.
+pub fn drum_roll(secs: f32) -> Arc<AudioData> {
+    let mut rng = Rng::new(53);
+    let mut lp = Lp(0.0);
+    render(secs + 0.4, move |t| {
+        let n = rng.range(-1.0, 1.0) as f32;
+        if t < secs {
+            let hit = (t * 28.0).fract();
+            let swell = 0.4 + 0.6 * t / secs;
+            0.35 * swell * (-hit * 9.0).exp() * lp.run(n, 5000.0)
+        } else {
+            let u = t - secs;
+            0.9 * env_ad(u, 0.001, 0.12) * (n * 0.7 + 0.3 * (2.0 * PI * 180.0 * u).sin())
+        }
+    })
+}
+
 pub fn by_name(name: &str) -> Option<Arc<AudioData>> {
     Some(
         match name.to_ascii_lowercase().replace(['-', ' '], "_").as_str() {
@@ -280,6 +458,20 @@ pub fn by_name(name: &str) -> Option<Arc<AudioData>> {
             "swoosh_up" | "rise" => swoosh_up(),
             "swoosh_down" | "fall" => swoosh_down(),
             "notification" => notification(),
+            "record_scratch" | "scratch" => record_scratch(),
+            "shutter_old" => shutter_old(),
+            "shutter_modern" => shutter(),
+            "fail" | "sad_trombone" | "price_is_right_fail" => fail(),
+            "tada" | "ta_da" | "reveal" => tada(),
+            "coin" => coin(),
+            "laser" | "zap" => laser(),
+            "sparkle" | "magic" => sparkle(),
+            "level_up" | "power_up" => level_up(),
+            "beep" | "countdown" => countdown_beep(false),
+            "beep_final" | "countdown_final" => countdown_beep(true),
+            "heartbeat" => heartbeat(),
+            "drum_roll" => drum_roll(1.5),
+            "vine_boom" | "dramatic_boom" => boom(),
             _ => return None,
         },
     )
@@ -333,6 +525,18 @@ mod tests {
             "swoosh_up",
             "swoosh_down",
             "notification",
+            "record_scratch",
+            "shutter_old",
+            "fail",
+            "tada",
+            "coin",
+            "laser",
+            "sparkle",
+            "level_up",
+            "beep",
+            "beep_final",
+            "heartbeat",
+            "drum_roll",
         ] {
             let a = by_name(name).unwrap();
             assert!(a.duration() > 0.03, "{name}");
