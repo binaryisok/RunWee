@@ -1,6 +1,6 @@
 [package]
 name = "runwee-cli"
-description = "RunWee command line renderer"
+description = "RunWee command line renderer and .rhai scene scripting"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -12,3 +12,5 @@ path = "src/main.rs"
 [dependencies]
 runwee = { path = "../runwee" }
 anyhow = "1"
+rhai = { version = "1.26", features = ["sync", "metadata"] }
+serde_json = "1"

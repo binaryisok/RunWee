@@ -206,6 +206,16 @@ impl Scene {
         vo: Voiceover,
         f: impl FnOnce(&mut Scene, &VoiceInfo),
     ) -> VoiceInfo {
+        let info = self.begin_voiceover(&vo);
+        f(self, &info);
+        self.end_voiceover(&info);
+        info
+    }
+
+    /// First half of [`Scene::voiceover`]: schedules audio and captions at the
+    /// current time and returns the timing (useful when the body runs elsewhere,
+    /// e.g. in a script).
+    pub fn begin_voiceover(&mut self, vo: &Voiceover) -> VoiceInfo {
         let start = self.time();
         let (clean, marks) = extract_bookmarks(&vo.text);
         let audio = vo
@@ -230,7 +240,6 @@ impl Scene {
             self.audio
                 .add(AudioClip::new(a.clone(), start).volume(vo.volume));
         }
-        // word timings
         let words: Vec<Word> = match vo
             .words_json
             .as_deref()
@@ -265,18 +274,20 @@ impl Scene {
                 });
             }
         }
-        let info = VoiceInfo {
+        VoiceInfo {
             start,
             duration,
             words,
             bookmarks,
-        };
-        f(self, &info);
+        }
+    }
+
+    /// Second half of [`Scene::voiceover`]: wait until the narration has finished.
+    pub fn end_voiceover(&mut self, info: &VoiceInfo) {
         let end = info.end();
         if self.time() < end {
             self.wait_until(end);
         }
-        info
     }
 
     /// Narrate without animations (just waits for the narration).
