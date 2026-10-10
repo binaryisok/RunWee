@@ -429,6 +429,12 @@ impl Scene {
         self.trackers.push((value, Vec::new()));
         Tracker(self.trackers.len() - 1)
     }
+    /// A live number bound to a tracker (manim's `DecimalNumber` + `ChangingDecimal`).
+    /// Animate it with `k.to(value)`.
+    pub fn counter(&mut self, k: Tracker, fmt: crate::graph::DecimalNumber, at: Vec2) -> Obj {
+        self.always_redraw(move |ctx| fmt.build(ctx.value(k)).move_to(at))
+    }
+
     pub fn set_value(&mut self, k: Tracker, v: f64) {
         let t = self.time;
         self.trackers[k.0].1.push(ScalarSeg {

@@ -7,7 +7,8 @@
     clippy::excessive_precision,
     clippy::too_many_arguments,
     clippy::type_complexity,
-    clippy::new_without_default
+    clippy::new_without_default,
+    clippy::needless_range_loop
 )]
 
 pub mod anim;
@@ -16,6 +17,7 @@ pub mod captions;
 pub mod color;
 pub mod effects;
 pub mod fonts;
+pub mod graph;
 pub mod math;
 pub mod mobject;
 pub mod output;
@@ -32,6 +34,7 @@ pub mod text;
 pub mod prelude {
     pub use crate::anim::*;
     pub use crate::color::*;
+    pub use crate::graph::*;
     pub use crate::math::*;
     pub use crate::mobject::*;
     pub use crate::output::*;
