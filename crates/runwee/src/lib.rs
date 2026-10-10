@@ -25,14 +25,18 @@ pub mod path;
 pub mod rate;
 pub mod render;
 pub mod scene;
+pub mod sfx;
 pub mod shapes;
 pub mod style;
 pub mod tex;
 pub mod text;
+pub mod voice;
 
 /// Everything needed to write scenes.
 pub mod prelude {
     pub use crate::anim::*;
+    pub use crate::audio::{AudioClip, AudioData};
+    pub use crate::captions::{CaptionLook, CaptionStyle, Cue};
     pub use crate::color::*;
     pub use crate::graph::*;
     pub use crate::math::*;
@@ -42,8 +46,10 @@ pub mod prelude {
     pub use crate::rate::*;
     pub use crate::render::*;
     pub use crate::scene::*;
+    pub use crate::sfx;
     pub use crate::shapes::*;
     pub use crate::style::*;
     pub use crate::tex::{chem, tex, tex_parts, tex_sized, tex_text, MathTex};
     pub use crate::text::*;
+    pub use crate::voice::*;
 }
