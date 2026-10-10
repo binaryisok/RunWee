@@ -682,6 +682,42 @@ impl Path {
         }
     }
 
+    /// Interpolate aligned paths with a custom point interpolation (e.g. along arcs).
+    pub fn lerp_with(&self, o: &Path, t: f64, f: &dyn Fn(Vec2, Vec2, f64) -> Vec2) -> Path {
+        Path {
+            subpaths: self
+                .subpaths
+                .iter()
+                .zip(&o.subpaths)
+                .map(|(a, b)| SubPath {
+                    start: f(a.start, b.start, t),
+                    segs: a
+                        .segs
+                        .iter()
+                        .zip(&b.segs)
+                        .map(|(x, y)| Cubic {
+                            c1: f(x.c1, y.c1, t),
+                            c2: f(x.c2, y.c2, t),
+                            p: f(x.p, y.p, t),
+                        })
+                        .collect(),
+                    closed: if t < 0.5 { a.closed } else { b.closed },
+                })
+                .collect(),
+        }
+    }
+
+    /// Subdivide every segment into `k` pieces (smoother non-linear warps).
+    pub fn subdivided(&self, k: usize) -> Path {
+        Path {
+            subpaths: self
+                .subpaths
+                .iter()
+                .map(|s| s.resample(s.segs.len() * k.max(1)))
+                .collect(),
+        }
+    }
+
     /// Make two paths structurally compatible for interpolation.
     pub fn align(a: &Path, b: &Path) -> (Path, Path) {
         let mut a = a.clone();

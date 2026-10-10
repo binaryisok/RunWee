@@ -705,7 +705,11 @@ impl Mobject {
     pub fn partial(mut self, a: f64, b: f64) -> Self {
         self.for_each_mut(&mut |m| {
             if !m.path.subpaths.is_empty() {
-                m.path = m.path.partial(a, b);
+                if b - a < 1e-6 {
+                    m.path = Path::new();
+                } else {
+                    m.path = m.path.partial(a, b);
+                }
             }
         });
         self

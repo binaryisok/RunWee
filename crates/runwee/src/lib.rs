@@ -10,24 +10,32 @@
     clippy::new_without_default
 )]
 
+pub mod anim;
+pub mod audio;
+pub mod captions;
 pub mod color;
 pub mod effects;
 pub mod math;
 pub mod mobject;
+pub mod output;
 pub mod path;
 pub mod rate;
 pub mod render;
+pub mod scene;
 pub mod shapes;
 pub mod style;
 
 /// Everything needed to write scenes.
 pub mod prelude {
+    pub use crate::anim::*;
     pub use crate::color::*;
     pub use crate::math::*;
     pub use crate::mobject::*;
+    pub use crate::output::*;
     pub use crate::path::*;
     pub use crate::rate::*;
     pub use crate::render::*;
+    pub use crate::scene::*;
     pub use crate::shapes::*;
     pub use crate::style::*;
 }
