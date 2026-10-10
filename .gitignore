@@ -5,3 +5,4 @@
 *.webm
 *.gif
 !docs/**/*.gif
+/.claude/worktrees

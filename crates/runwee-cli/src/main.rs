@@ -27,6 +27,8 @@ RENDER OPTIONS:
     -q, --quality <q>       low | medium | high | 2k | 4k   (default 2k)
     --still <t>             Render a single PNG at time t
     --props <json>          JSON object exposed to the script as PROPS
+    --theme <name>          restyle every scene (dark, light, chalkboard, blueprint, paper, …)
+    --background <name>     background preset, colour (#1e1e2e) or image/video path
     --vertical              9:16 portrait frame
     --from <t> --to <t>     Render only part of the timeline
     --transparent           Keep alpha (webm / mov / png)
@@ -65,6 +67,8 @@ struct Args {
     transparent: bool,
     audio: bool,
     captions: bool,
+    theme: Option<String>,
+    background: Option<String>,
 }
 
 fn parse_args() -> Result<Args> {
@@ -82,6 +86,8 @@ fn parse_args() -> Result<Args> {
         transparent: false,
         audio: true,
         captions: true,
+        theme: None,
+        background: None,
     };
     let mut i = 0;
     let value = |i: &mut usize, flag: &str| -> Result<String> {
@@ -104,6 +110,8 @@ fn parse_args() -> Result<Args> {
             "--from" => a.from = num(value(&mut i, &arg)?, &arg)?,
             "--to" => a.to = Some(num(value(&mut i, &arg)?, &arg)?),
             "--vertical" => a.vertical = true,
+            "--theme" => a.theme = Some(value(&mut i, &arg)?),
+            "--background" | "--bg" => a.background = Some(value(&mut i, &arg)?),
             "--transparent" => a.transparent = true,
             "--no-audio" => a.audio = false,
             "--no-captions" => a.captions = false,
@@ -138,7 +146,42 @@ fn render_cmd(a: &Args) -> Result<()> {
     if a.vertical {
         set_frame_size(8.0 * 9.0 / 16.0, 8.0);
     }
-    let out = script::run_script(&src, props)?;
+    let mut out = script::run_script(&src, props)?;
+    if let Some(name) = &a.theme {
+        let th = Theme::preset(name).with_context(|| {
+            format!(
+                "unknown theme '{name}' (any of: {})",
+                BACKGROUND_PRESETS.join(", ")
+            )
+        })?;
+        for (scene, _) in &mut out.scenes {
+            scene.base_theme(th.clone());
+        }
+    }
+    if let Some(name) = &a.background {
+        let bg = match Background::preset(name) {
+            Some(bg) => bg,
+            None if Path::new(name).exists() => {
+                let ext = Path::new(name)
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .unwrap_or("")
+                    .to_ascii_lowercase();
+                if matches!(ext.as_str(), "mp4" | "mov" | "webm" | "mkv" | "avi") {
+                    Background::video(name)?.dim(0.35)
+                } else {
+                    Background::image(name)?.dim(0.35)
+                }
+            }
+            None => bail!(
+                "unknown background '{name}' (presets: {})",
+                BACKGROUND_PRESETS.join(", ")
+            ),
+        };
+        for (scene, _) in &mut out.scenes {
+            scene.base_background(bg.clone());
+        }
+    }
     let vertical = a.vertical || out.vertical;
     let q_name = a.quality.clone().or_else(|| out.quality.clone());
     let q = match q_name.as_deref() {
@@ -216,6 +259,7 @@ fn info_cmd() {
             .unwrap_or(1)
     );
     println!("qualities: low 480p15 · medium 720p30 · high 1080p60 · 2k 1440p60 · 4k 2160p60");
+    println!("backgrounds / themes: {}", BACKGROUND_PRESETS.join(", "));
     println!("formats: mp4 (h264) · webm (vp9, alpha) · mov (prores) · gif · png / png sequence");
     println!("script functions: {}", script::api_signatures().len());
 }

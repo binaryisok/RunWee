@@ -122,6 +122,7 @@ struct State {
     cur: Scene,
     vertical: bool,
     quality: Option<String>,
+    theme: Option<Theme>,
 }
 
 type Shared = Arc<Mutex<State>>;
@@ -1213,18 +1214,139 @@ fn register_scene(engine: &mut Engine, st: Shared) {
         s!(st1, |sc: &mut Scene| sc.set_z(o, f(&z)))
     });
     let st1 = st.clone();
-    engine.register_fn("background", move |c: N| {
-        let c = col(&c);
-        s!(st1, |sc: &mut Scene| {
-            let s = std::mem::take(sc);
-            *sc = s.background(c);
-        })
+    // Backgrounds & themes. A string is a preset name or a colour; a colour value works too.
+    engine.register_fn("background", move |c: N| -> R<()> {
+        let bg = if let Some(name) = c.clone().try_cast::<rhai::ImmutableString>() {
+            Background::preset(&name).ok_or_else(|| {
+                format!(
+                    "unknown background '{name}' (presets: {})",
+                    BACKGROUND_PRESETS.join(", ")
+                )
+            })?
+        } else {
+            Background::Solid(col(&c))
+        };
+        s!(st1, |sc: &mut Scene| sc.set_background(bg));
+        Ok(())
+    });
+    let st1 = st.clone();
+    engine.register_fn("background_fade", move |name: &str, dur: N| -> R<()> {
+        let bg = Background::preset(name).ok_or_else(|| format!("unknown background '{name}'"))?;
+        s!(st1, |sc: &mut Scene| sc.background_fade(bg, f(&dur)));
+        Ok(())
+    });
+    let st1 = st.clone();
+    engine.register_fn("background_gradient", move |a: N, b: N, angle: N| {
+        let bg = Background::linear(col(&a), col(&b), f(&angle));
+        s!(st1, |sc: &mut Scene| sc.set_background(bg))
+    });
+    let st1 = st.clone();
+    engine.register_fn("background_gradient", move |list: Array, angle: N| {
+        let cs = colors(&list);
+        let n = cs.len().max(2) - 1;
+        let stops = cs
+            .iter()
+            .enumerate()
+            .map(|(i, c)| (i as f32 / n as f32, *c))
+            .collect();
+        s!(st1, |sc: &mut Scene| sc.set_background(
+            Background::Linear {
+                angle: f(&angle),
+                stops
+            }
+        ))
+    });
+    let st1 = st.clone();
+    engine.register_fn("background_radial", move |inner: N, outer: N| {
+        let bg = Background::radial(col(&inner), col(&outer));
+        s!(st1, |sc: &mut Scene| sc.set_background(bg))
+    });
+    let st1 = st.clone();
+    engine.register_fn("background_corners", move |a: N, b: N, c: N, d: N| {
+        let bg = Background::Corners([col(&a), col(&b), col(&c), col(&d)]);
+        s!(st1, |sc: &mut Scene| sc.set_background(bg))
+    });
+    let st1 = st.clone();
+    engine.register_fn("background_image", move |path: &str, dim: N| -> R<()> {
+        let bg = Background::image(path)
+            .map_err(|e| e.to_string())?
+            .dim(f(&dim) as f32);
+        s!(st1, |sc: &mut Scene| sc.set_background(bg));
+        Ok(())
+    });
+    let st1 = st.clone();
+    engine.register_fn("background_video", move |path: &str, dim: N| -> R<()> {
+        let bg = Background::video(path)
+            .map_err(|e| e.to_string())?
+            .dim(f(&dim) as f32);
+        s!(st1, |sc: &mut Scene| sc.set_background(bg));
+        Ok(())
+    });
+    let st1 = st.clone();
+    engine.register_fn(
+        "background_pattern",
+        move |kind: &str, base: N, ink: N, spacing: N| -> R<()> {
+            let k = match kind.to_ascii_lowercase().replace('_', "-").as_str() {
+                "grid" => Pattern::Grid,
+                "graph-paper" | "graph" => Pattern::GraphPaper,
+                "dots" => Pattern::Dots,
+                "ruled" | "lines" => Pattern::Ruled,
+                "notebook" => Pattern::Notebook,
+                "checker" | "checkerboard" => Pattern::Checker,
+                "stripes" => Pattern::Stripes,
+                "crosses" | "plus" => Pattern::Crosses,
+                "isometric" => Pattern::Isometric,
+                _ => return Err(format!("unknown pattern '{kind}'").into()),
+            };
+            let bg = match Background::pattern(k, col(&base), col(&ink)) {
+                Background::Pattern {
+                    kind,
+                    base,
+                    ink,
+                    width,
+                    drift,
+                    ..
+                } => Background::Pattern {
+                    kind,
+                    base,
+                    ink,
+                    spacing: f(&spacing),
+                    width,
+                    drift,
+                },
+                other => other,
+            };
+            s!(st1, |sc: &mut Scene| sc.set_background(bg));
+            Ok(())
+        },
+    );
+    let st1 = st.clone();
+    engine.register_fn("theme", move |name: &str| -> R<()> {
+        let th = Theme::preset(name).ok_or_else(|| {
+            format!(
+                "unknown theme '{name}' (any background preset works: {})",
+                BACKGROUND_PRESETS.join(", ")
+            )
+        })?;
+        let mut g = st1.lock().unwrap();
+        g.theme = Some(th.clone());
+        g.cur.theme(th);
+        Ok(())
+    });
+    engine.register_fn("backgrounds", || -> Array {
+        BACKGROUND_PRESETS
+            .iter()
+            .map(|s| Dynamic::from(s.to_string()))
+            .collect()
     });
     let st1 = st.clone();
     engine.register_fn("vertical", move || {
         let mut g = st1.lock().unwrap();
         g.vertical = true;
         g.cur = Scene::vertical();
+        if let Some(th) = g.theme.clone() {
+            g.cur.theme(th);
+        }
     });
     let st1 = st.clone();
     engine.register_fn("quality", move |q: &str| {
@@ -1871,6 +1993,7 @@ fn build_engine() -> (Engine, Shared) {
         cur: Scene::new(),
         vertical: false,
         quality: None,
+        theme: None,
     }));
     register_math(&mut engine);
     register_mobject(&mut engine);

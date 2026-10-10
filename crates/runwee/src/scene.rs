@@ -175,6 +175,8 @@ pub struct SceneConfig {
     pub frame_height: f64,
     /// Width / height of the output frame.
     pub aspect: f64,
+    /// Colour adaptation for light backgrounds (set by [`Scene::theme`]).
+    pub ink: Ink,
 }
 
 impl Default for SceneConfig {
@@ -183,6 +185,7 @@ impl Default for SceneConfig {
             background: BACKGROUND,
             frame_height: 8.0,
             aspect: 16.0 / 9.0,
+            ink: Ink::Normal,
         }
     }
 }
@@ -201,6 +204,8 @@ pub struct Scene {
     /// Extra time appended at the end (avoids cutting the last frame).
     pub tail: f64,
     post_effects: Vec<(f64, f64, PostFn)>,
+    /// Background changes: (start time, cross-fade duration, background).
+    backdrops: Vec<(f64, f64, crate::background::Background)>,
     pub(crate) saved: std::collections::HashMap<Obj, Mobject>,
 }
 
@@ -234,6 +239,7 @@ impl Scene {
             captions: Default::default(),
             tail: 0.0,
             post_effects: Vec::new(),
+            backdrops: Vec::new(),
             saved: Default::default(),
         }
     }
@@ -249,6 +255,101 @@ impl Scene {
         self.config.background = c;
         self.camera0.background = c;
         self
+    }
+
+    /// Use `bg` (colour, gradient, image, video, pattern, animated preset, …) from the
+    /// current time on. At time 0 it is the scene's background; later calls switch to it.
+    pub fn set_background(&mut self, bg: impl Into<crate::background::Background>) {
+        self.background_fade(bg, 0.0);
+    }
+
+    /// Replace the background from time 0 (keeps later background changes).
+    pub fn base_background(&mut self, bg: impl Into<crate::background::Background>) {
+        let bg = bg.into();
+        let c = bg.base_color();
+        self.config.background = c;
+        self.camera0.background = c;
+        match self.backdrops.first_mut() {
+            Some(first) if first.0 <= 1e-9 => first.2 = bg,
+            _ => self.backdrops.insert(0, (0.0, 0.0, bg)),
+        }
+    }
+
+    /// Replace the theme from time 0 (used by the CLI's `--theme`).
+    pub fn base_theme(&mut self, theme: crate::background::Theme) {
+        self.config.ink = theme.ink;
+        self.base_background(theme.background);
+    }
+
+    /// Cross-fade to `bg` over `duration` seconds starting now.
+    pub fn background_fade(&mut self, bg: impl Into<crate::background::Background>, duration: f64) {
+        let bg = bg.into();
+        if self.time <= 1e-9 && self.backdrops.is_empty() {
+            let c = bg.base_color();
+            self.config.background = c;
+            self.camera0.background = c;
+        }
+        self.backdrops.retain(|b| b.0 < self.time - 1e-9);
+        self.backdrops.push((self.time, duration.max(0.0), bg));
+    }
+
+    /// A named background preset (`"blueprint"`, `"aurora"`, `"graph-paper"`, a colour, …).
+    pub fn background_preset(&mut self, name: &str) -> anyhow::Result<()> {
+        let bg = crate::background::Background::preset(name).ok_or_else(|| {
+            anyhow::anyhow!(
+                "unknown background '{name}' (try one of: {})",
+                crate::background::BACKGROUND_PRESETS.join(", ")
+            )
+        })?;
+        self.set_background(bg);
+        Ok(())
+    }
+
+    /// Apply a theme: its background plus the ink mode that keeps colours readable
+    /// (light themes darken white text and pastel accents automatically).
+    pub fn theme(&mut self, theme: crate::background::Theme) {
+        self.config.ink = theme.ink;
+        self.set_background(theme.background);
+    }
+
+    /// Builder form of [`Scene::theme`].
+    pub fn with_theme(mut self, theme: crate::background::Theme) -> Self {
+        self.theme(theme);
+        self
+    }
+
+    fn draw_backdrop(&self, t: f64, pm: &mut tiny_skia::Pixmap) {
+        let Some(i) = self.backdrops.iter().rposition(|b| b.0 <= t + 1e-9) else {
+            if let Some(first) = self.backdrops.first() {
+                first.2.draw(t, pm);
+            }
+            return;
+        };
+        let (start, fade, bg) = &self.backdrops[i];
+        let p = if *fade > 0.0 {
+            ((t - start) / fade).clamp(0.0, 1.0)
+        } else {
+            1.0
+        };
+        if p < 1.0 && i > 0 {
+            self.backdrops[i - 1].2.draw(t, pm);
+            if let Some(mut layer) = tiny_skia::Pixmap::new(pm.width(), pm.height()) {
+                bg.draw(t, &mut layer);
+                pm.draw_pixmap(
+                    0,
+                    0,
+                    layer.as_ref(),
+                    &tiny_skia::PixmapPaint {
+                        opacity: crate::rate::Rate::Smooth.eval(p) as f32,
+                        ..Default::default()
+                    },
+                    tiny_skia::Transform::identity(),
+                    None,
+                );
+            }
+        } else {
+            bg.draw(t, pm);
+        }
     }
 
     /// Current time of the builder cursor.
@@ -583,8 +684,15 @@ impl Scene {
     pub fn render_impl(&self, t: f64, pm: &mut tiny_skia::Pixmap, cfg: RenderConfig, clear: bool) {
         let cam = self.camera_at(t);
         let mobs = self.frame_mobjects(t);
+        let cfg = RenderConfig {
+            ink: self.config.ink,
+            ..cfg
+        };
+        if clear && !self.backdrops.is_empty() {
+            self.draw_backdrop(t, pm);
+        }
         let mut canvas = Canvas::new(pm, cfg, cam);
-        if clear {
+        if clear && self.backdrops.is_empty() {
             canvas.clear();
         }
         let any_fixed = mobs.iter().any(|m| m.1);

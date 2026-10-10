@@ -13,6 +13,8 @@ pub struct RenderConfig {
     pub width: u32,
     pub height: u32,
     pub fps: f64,
+    /// Colour adaptation for the background (set from the scene's theme).
+    pub ink: Ink,
 }
 
 impl Default for RenderConfig {
@@ -45,7 +47,12 @@ impl Quality {
             Quality::TwoK => (2560, 1440, 60.0),
             Quality::FourK => (3840, 2160, 60.0),
         };
-        RenderConfig { width, height, fps }
+        RenderConfig {
+            width,
+            height,
+            fps,
+            ink: Ink::Normal,
+        }
     }
     pub fn parse(s: &str) -> Option<Quality> {
         Some(match s.to_ascii_lowercase().as_str() {
@@ -61,14 +68,19 @@ impl Quality {
 
 impl RenderConfig {
     pub fn new(width: u32, height: u32, fps: f64) -> Self {
-        Self { width, height, fps }
+        Self {
+            width,
+            height,
+            fps,
+            ink: Ink::Normal,
+        }
     }
     /// Same quality but portrait (e.g. 9:16 shorts / reels).
     pub fn portrait(self) -> Self {
         Self {
             width: self.height,
             height: self.width,
-            fps: self.fps,
+            ..self
         }
     }
     pub fn aspect(&self) -> f64 {
@@ -162,6 +174,10 @@ impl<'a> Canvas<'a> {
         self.xf
     }
 
+    fn ink(&self, c: Color) -> Color {
+        self.cfg.ink.apply(c)
+    }
+
     /// Draw a mobject and its whole family.
     pub fn draw(&mut self, m: &Mobject) {
         self.draw_with_opacity(m, 1.0);
@@ -218,11 +234,13 @@ impl<'a> Canvas<'a> {
     fn shader(&self, p: &Paint, alpha: f32) -> sk::Shader<'static> {
         let stops = |st: &Vec<(f32, Color)>| -> Vec<sk::GradientStop> {
             st.iter()
-                .map(|(pos, c)| sk::GradientStop::new(pos.clamp(0.0, 1.0), c.fade(alpha).to_skia()))
+                .map(|(pos, c)| {
+                    sk::GradientStop::new(pos.clamp(0.0, 1.0), self.ink(*c).fade(alpha).to_skia())
+                })
                 .collect()
         };
         match p {
-            Paint::Solid(c) => sk::Shader::SolidColor(c.fade(alpha).to_skia()),
+            Paint::Solid(c) => sk::Shader::SolidColor(self.ink(*c).fade(alpha).to_skia()),
             Paint::Linear {
                 start,
                 end,
@@ -237,7 +255,9 @@ impl<'a> Canvas<'a> {
                     sk::SpreadMode::Pad,
                     sk::Transform::identity(),
                 )
-                .unwrap_or(sk::Shader::SolidColor(p.color().fade(alpha).to_skia()))
+                .unwrap_or(sk::Shader::SolidColor(
+                    self.ink(p.color()).fade(alpha).to_skia(),
+                ))
             }
             Paint::Radial {
                 center,
@@ -257,7 +277,9 @@ impl<'a> Canvas<'a> {
                     sk::SpreadMode::Pad,
                     sk::Transform::identity(),
                 )
-                .unwrap_or(sk::Shader::SolidColor(p.color().fade(alpha).to_skia()))
+                .unwrap_or(sk::Shader::SolidColor(
+                    self.ink(p.color()).fade(alpha).to_skia(),
+                ))
             }
         }
     }
@@ -393,7 +415,9 @@ impl<'a> Canvas<'a> {
         let blend = Self::blend(st.blend);
         if bg_px > 0.0 {
             let paint = sk::Paint {
-                shader: sk::Shader::SolidColor(st.background_stroke.fade(opacity).to_skia()),
+                shader: sk::Shader::SolidColor(
+                    self.ink(st.background_stroke).fade(opacity).to_skia(),
+                ),
                 anti_alias: true,
                 blend_mode: blend,
                 ..Default::default()
@@ -464,7 +488,7 @@ impl<'a> Canvas<'a> {
         };
         let tr = sk::Transform::from_translate(-x0 as f32, -y0 as f32);
         let paint = sk::Paint {
-            shader: sk::Shader::SolidColor(color.to_skia()),
+            shader: sk::Shader::SolidColor(self.ink(color).to_skia()),
             anti_alias: true,
             ..Default::default()
         };

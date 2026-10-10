@@ -14,6 +14,7 @@
 pub mod anim;
 pub mod assets;
 pub mod audio;
+pub mod background;
 pub mod biology;
 pub mod boolean;
 pub mod captions;
@@ -50,6 +51,7 @@ pub mod prelude {
     pub use crate::anim::*;
     pub use crate::assets::*;
     pub use crate::audio::{AudioClip, AudioData};
+    pub use crate::background::*;
     pub use crate::biology;
     pub use crate::boolean::*;
     pub use crate::captions::{CaptionLook, CaptionStyle, Cue};

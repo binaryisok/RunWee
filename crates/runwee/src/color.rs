@@ -332,6 +332,51 @@ pub const DARK_BLUE: Color = BLUE_E;
 /// Default background (3b1b-style deep charcoal).
 pub const BACKGROUND: Color = hex(0x0E1117);
 
+/// How colours are adapted to the background when drawn (set by a theme).
+///
+/// RunWee's palette is designed for dark backgrounds. `Ink::Light` remaps colours at
+/// draw time so the same scene reads well on a light background: near-neutral colours
+/// (white, greys, black) are mirrored in lightness, and bright accents are darkened
+/// just enough to keep contrast. Images and video are never remapped.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub enum Ink {
+    #[default]
+    Normal,
+    Light,
+}
+
+impl Ink {
+    pub fn apply(self, c: Color) -> Color {
+        match self {
+            Ink::Normal => c,
+            Ink::Light => {
+                let [l, a, b] = c.to_oklab();
+                let chroma = (a * a + b * b).sqrt();
+                let neutral = (1.0 - chroma / 0.06).clamp(0.0, 1.0);
+                // Neutrals: white → near-black ink, dark greys → light greys.
+                let flipped = 0.16 + (1.0 - l).max(0.0).powf(0.6) * 0.78;
+                // Accents: cap lightness so pastel manim colours stay readable on white,
+                // and boost chroma so darkened yellows read as amber rather than olive.
+                let cap = 0.66;
+                let accent = if l > cap { cap + (l - cap) * 0.2 } else { l };
+                let l2 = flipped * neutral + accent * (1.0 - neutral);
+                let darkened = ((l - accent) / 0.3).clamp(0.0, 1.0);
+                let k = 1.0 + (0.2 + 0.6 * darkened) * (1.0 - neutral);
+                // Darkened yellows look olive; nudge them towards amber.
+                let hue = b.atan2(a).to_degrees();
+                let yellow = (1.0 - ((hue - 100.0) / 30.0).abs()).clamp(0.0, 1.0)
+                    * darkened
+                    * (1.0 - neutral);
+                let rot = (-28.0f32 * yellow).to_radians();
+                let (a2, b2) = (a * rot.cos() - b * rot.sin(), a * rot.sin() + b * rot.cos());
+                let mut o = Color::from_oklab([l2, a2 * k, b2 * k]);
+                o.a = c.a;
+                o
+            }
+        }
+    }
+}
+
 /// All palette names, for scripting and parsing.
 pub const PALETTE: &[(&str, Color)] = &[
     ("WHITE", WHITE),
