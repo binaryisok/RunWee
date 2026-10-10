@@ -360,8 +360,8 @@ pub fn curved_arrow(a: Vec2, b: Vec2, angle: f64) -> Mobject {
 /// (i.e. for a→b pointing right, the tip points down).
 pub fn brace_between(a: Vec2, b: Vec2) -> Mobject {
     let w = a.distance(b);
-    let depth = 0.18_f64.min(w * 0.3).max(0.08);
-    let thick = 0.045_f64.min(w * 0.05).max(0.012);
+    let depth = 0.26_f64.min(w * 0.3).max(0.1);
+    let thick = 0.075_f64.min(w * 0.08).max(0.02);
     // Centre line in local frame: x along [0,w], y downwards negative.
     let n = 80;
     let r = (depth * 0.5).min(w / 4.0);

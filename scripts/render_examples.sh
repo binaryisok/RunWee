@@ -9,7 +9,8 @@ for f in examples/scripts/*.rhai; do
   echo "== rendering $name"
   ./target/release/runwee render "$f" --quality "$QUALITY" -o "renders/$name.mp4"
 done
-for ex in $(ls crates/runwee/examples/*.rs 2>/dev/null | xargs -n1 basename 2>/dev/null | sed 's/\.rs$//'); do
+for f in crates/runwee/examples/*.rs; do
+  ex=$(basename "$f" .rs)
   echo "== rust example $ex"
   RUNWEE_QUALITY="$QUALITY" RUNWEE_OUT="renders/$ex.mp4" cargo run --release -q -p runwee --example "$ex"
 done

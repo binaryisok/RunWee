@@ -11,10 +11,12 @@
 )]
 
 pub mod color;
+pub mod effects;
 pub mod math;
 pub mod mobject;
 pub mod path;
 pub mod rate;
+pub mod render;
 pub mod shapes;
 pub mod style;
 
@@ -25,6 +27,7 @@ pub mod prelude {
     pub use crate::mobject::*;
     pub use crate::path::*;
     pub use crate::rate::*;
+    pub use crate::render::*;
     pub use crate::shapes::*;
     pub use crate::style::*;
 }
