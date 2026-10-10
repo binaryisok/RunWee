@@ -206,6 +206,8 @@ pub struct Scene {
     /// Extra time appended at the end (avoids cutting the last frame).
     pub tail: f64,
     post_effects: Vec<(f64, f64, PostFn)>,
+    /// End of the latest animation started with [`Scene::play_background`].
+    bg_end: f64,
     /// Background changes: (start time, cross-fade duration, background).
     backdrops: Vec<(f64, f64, crate::background::Background)>,
     pub(crate) saved: std::collections::HashMap<Obj, Mobject>,
@@ -242,6 +244,7 @@ impl Scene {
             tail: 0.0,
             post_effects: Vec::new(),
             backdrops: Vec::new(),
+            bg_end: 0.0,
             saved: Default::default(),
         }
     }
@@ -361,7 +364,10 @@ impl Scene {
     /// Total duration.
     pub fn duration(&self) -> f64 {
         let audio_end = self.audio.end_time();
-        (self.time + self.tail).max(audio_end).max(1.0 / 120.0)
+        (self.time + self.tail)
+            .max(audio_end)
+            .max(self.bg_end)
+            .max(1.0 / 120.0)
     }
     /// Record a named marker at the current time.
     pub fn marker(&mut self, name: &str) {
@@ -765,6 +771,17 @@ impl Scene {
         let total = self.commit(t0, ctx);
         self.time = t0 + total;
         total
+    }
+
+    /// Start animations now without moving the cursor, so whatever is played next
+    /// runs at the same time (e.g. a slow camera move or a parameter sweep under a
+    /// narration). Don't animate the same objects again inside that window.
+    pub fn play_background(&mut self, run_time: f64, anims: impl IntoAnims) -> f64 {
+        let t0 = self.time;
+        let d = self.play_for(run_time, anims);
+        self.bg_end = self.bg_end.max(t0 + d);
+        self.rewind_to(t0);
+        d
     }
 
     /// Play with an explicit total run time.
@@ -2022,5 +2039,16 @@ mod tests {
         let mid = s.eval_obj(sq, 0.5, 0);
         // a rigidly rotated square keeps its side length (diagonal bounds at 45°)
         assert!((mid.width() - 2.0 * 2f64.sqrt()).abs() < 1e-3);
+    }
+
+    #[test]
+    fn background_play_overlaps_and_extends_duration() {
+        let mut s = Scene::new();
+        let k = s.tracker(0.0);
+        s.play_background(4.0, k.to(10.0).rate(Rate::Linear));
+        assert_eq!(s.time(), 0.0);
+        s.wait(1.0);
+        assert!((s.tracker_value_at(k, 2.0) - 5.0).abs() < 1e-6);
+        assert!(s.duration() >= 4.0);
     }
 }

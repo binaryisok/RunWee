@@ -1137,6 +1137,10 @@ fn register_scene(engine: &mut Engine, st: Shared) {
         s!(st1, |sc: &mut Scene| sc.play_for(f(&t), anims(a)))
     });
     let st1 = st.clone();
+    engine.register_fn("play_bg", move |a: Dynamic, t: N| {
+        s!(st1, |sc: &mut Scene| sc.play_background(f(&t), anims(a)))
+    });
+    let st1 = st.clone();
     engine.register_fn("wait", move |d: N| s!(st1, |sc: &mut Scene| sc.wait(f(&d))));
     let st1 = st.clone();
     engine.register_fn("wait", move || s!(st1, |sc: &mut Scene| sc.wait(1.0)));

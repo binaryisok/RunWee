@@ -157,7 +157,9 @@ pub fn synthesize_tts(text: &str) -> Option<Arc<AudioData>> {
             .ok()?;
         if let Some(mut stdin) = child.stdin.take() {
             use std::io::Write;
+            // Line-based engines (piper, festival, …) only speak a line once it ends.
             let _ = stdin.write_all(text.as_bytes());
+            let _ = stdin.write_all(b"\n");
         }
         if !child.wait().ok()?.success() {
             return None;
