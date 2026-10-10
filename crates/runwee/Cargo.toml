@@ -1,0 +1,16 @@
+[package]
+name = "runwee"
+description = "Ultra-efficient STEM animation engine: manim-style math animation + remotion-style composition, in Rust"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+tiny-skia = "0.12"
+rustybuzz = "0.20"
+rayon = "1.10"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+usvg = { version = "0.48", default-features = false }

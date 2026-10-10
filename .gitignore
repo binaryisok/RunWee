@@ -1,0 +1,7 @@
+/target
+/renders
+/media
+*.mp4
+*.webm
+*.gif
+!docs/**/*.gif
