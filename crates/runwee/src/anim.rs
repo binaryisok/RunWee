@@ -17,6 +17,12 @@ pub type HomotopyFn = Arc<dyn Fn(Vec2, f64) -> Vec2 + Send + Sync>;
 pub type MobFn = Arc<dyn Fn(&Mobject, f64) -> Mobject + Send + Sync>;
 /// Custom mobject → mobject function (used by `.animate().apply(...)`).
 pub type MapFn = Arc<dyn Fn(Mobject) -> Mobject + Send + Sync>;
+/// Builds a temporary overlay (e.g. a surrounding rectangle) from a target's state.
+pub type OverlayFn = Arc<dyn Fn(&Mobject) -> Mobject + Send + Sync>;
+/// Monotone time remap `[0, 1] -> [0, 1]` (outer progress → inner progress).
+pub type WarpFn = Arc<dyn Fn(f64) -> f64 + Send + Sync>;
+/// Tracker value as a function of `(value at start, eased alpha)`.
+pub type ScalarFn = Arc<dyn Fn(f64, f64) -> f64 + Send + Sync>;
 
 /// Where a "grow" animation starts from.
 #[derive(Clone, Copy, Debug)]
@@ -210,6 +216,34 @@ pub enum AnimKind {
         introduces: bool,
         removes: bool,
     },
+    /// A temporary object built from `obj` (rebuilt every frame when `follow`),
+    /// animated by `f` and removed afterwards (FlashAround & friends).
+    Overlay {
+        obj: Obj,
+        build: OverlayFn,
+        f: MobFn,
+        follow: bool,
+    },
+    /// Play `anim` with its time remapped by `warp`; the natural run time is
+    /// multiplied by `time_scale` (manim's `ChangeSpeed`).
+    TimeWarp {
+        anim: Box<Animation>,
+        warp: WarpFn,
+        time_scale: f64,
+    },
+    /// Drive a tracker with an arbitrary function of its start value
+    /// (manim's `ChangingDecimal`, `CountInFrom`, `ExponentialValueTracker`).
+    TrackerWith {
+        tracker: Tracker,
+        f: ScalarFn,
+    },
+    /// Morph between the states of two running animations (manim's
+    /// `TransformAnimations`). The first animation's object ends looking like
+    /// the second animation's final state.
+    TransformAnimations {
+        from: Box<Animation>,
+        to: Box<Animation>,
+    },
 }
 
 /// An animation plus its timing parameters.
@@ -231,6 +265,7 @@ impl Animation {
             AnimKind::Wiggle { .. } | AnimKind::Typewriter(_) | AnimKind::Wait => Rate::Linear,
             AnimKind::ShowPassingFlash { .. } | AnimKind::Flash { .. } => Rate::Linear,
             AnimKind::MoveAlongPath { .. } => Rate::Smooth,
+            AnimKind::TimeWarp { .. } => Rate::Linear,
             _ => Rate::Smooth,
         };
         Self {
@@ -591,6 +626,185 @@ pub fn lagged_start(anims: Vec<Animation>, lag_ratio: f64) -> Animation {
 /// One after another.
 pub fn succession(anims: Vec<Animation>) -> Animation {
     group_anims(anims, 1.0)
+}
+
+/// Play `anim` with its timeline remapped by `warp` (monotone, `warp(0) = 0`,
+/// `warp(1) = 1`): at outer progress `u` the inner animation shows its state at
+/// progress `warp(u)`. The run time is unchanged; inner rate functions are kept.
+pub fn time_warp(
+    anim: impl Into<Animation>,
+    warp: impl Fn(f64) -> f64 + Send + Sync + 'static,
+) -> Animation {
+    Animation::new(AnimKind::TimeWarp {
+        anim: Box::new(anim.into()),
+        warp: Arc::new(warp),
+        time_scale: 1.0,
+    })
+}
+
+/// Speed profile of manim's `ChangeSpeed`: `speedinfo` holds `(progress, speed)`
+/// nodes; the speed varies linearly in time between nodes. Returns the warp
+/// function (outer progress → inner progress) and the run-time multiplier.
+pub fn speed_profile(speedinfo: &[(f64, f64)]) -> (WarpFn, f64) {
+    let mut nodes: Vec<(f64, f64)> = speedinfo
+        .iter()
+        .copied()
+        .filter(|(p, _)| p.is_finite() && (0.0..=1.0).contains(p))
+        .collect();
+    nodes.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+    nodes.dedup_by(|a, b| (a.0 - b.0).abs() < 1e-12);
+    if nodes.first().is_none_or(|n| n.0 > 0.0) {
+        nodes.insert(0, (0.0, 1.0));
+    }
+    if nodes.last().unwrap().0 < 1.0 {
+        let last = nodes.last().unwrap().1;
+        nodes.push((1.0, last));
+    }
+    // per piece: (time start, time length, progress start, progress length, v0, v1)
+    let mut pieces = Vec::new();
+    let mut t = 0.0;
+    for w in nodes.windows(2) {
+        let (p0, v0) = w[0];
+        let (p1, v1) = w[1];
+        let dp = p1 - p0;
+        let (v0, v1) = (v0.max(0.0), v1.max(0.0));
+        // time to cover `dp` progress with speed going linearly v0 -> v1
+        let dt = if v0 + v1 > 1e-12 {
+            2.0 * dp / (v0 + v1)
+        } else {
+            0.0
+        };
+        pieces.push((t, dt, p0, dp, v0, v1));
+        t += dt;
+    }
+    let total = t.max(1e-12);
+    let warp: WarpFn = Arc::new(move |u: f64| {
+        let tt = u.clamp(0.0, 1.0) * total;
+        for &(ts, dt, p0, dp, v0, v1) in &pieces {
+            if dt <= 0.0 {
+                continue; // zero-speed span: skipped instantly
+            }
+            if tt <= ts + dt {
+                let x = ((tt - ts) / dt).clamp(0.0, 1.0);
+                // progress gained = ∫ speed dt with speed linear in time, normalised
+                let gained = (v0 * x + (v1 - v0) * x * x / 2.0) * dt;
+                return (p0 + gained.min(dp)).min(1.0);
+            }
+        }
+        1.0
+    });
+    (warp, total)
+}
+
+/// manim's `ChangeSpeed`: play `anim` with a varying speed. `speedinfo` holds
+/// `(progress, speed)` nodes (e.g. `[(0.3, 1.0), (0.4, 0.1), (0.6, 0.1), (1.0, 1.0)]`);
+/// speed changes linearly between them and the run time grows/shrinks to match.
+/// Set `.rate(...)` on the result to apply a rate function before the speed change.
+pub fn change_speed(anim: impl Into<Animation>, speedinfo: &[(f64, f64)]) -> Animation {
+    let (warp, time_scale) = speed_profile(speedinfo);
+    let inner: Animation = anim.into();
+    let run_time = inner.run_time.map(|r| r * time_scale);
+    let mut a = Animation::new(AnimKind::TimeWarp {
+        anim: Box::new(inner),
+        warp,
+        time_scale,
+    });
+    a.run_time = run_time;
+    a
+}
+
+/// manim's `TransformAnimations`: while both animations run, `from`'s object
+/// morphs into `to`'s object. Only animations acting on one object each.
+pub fn transform_animations(from: impl Into<Animation>, to: impl Into<Animation>) -> Animation {
+    Animation::new(AnimKind::TransformAnimations {
+        from: Box::new(from.into()),
+        to: Box::new(to.into()),
+    })
+}
+
+/// Transform along a clockwise arc (manim's `ClockwiseTransform`).
+pub fn clockwise_transform(o: Obj, target: Mobject) -> Animation {
+    transform_arc(o, target, -PI)
+}
+
+/// Transform along a counter-clockwise arc (manim's `CounterclockwiseTransform`).
+pub fn counterclockwise_transform(o: Obj, target: Mobject) -> Animation {
+    transform_arc(o, target, PI)
+}
+
+/// A temporary object built from `o`'s state, animated by `f(overlay, eased_alpha)`
+/// and removed when done. With `follow`, it is rebuilt every frame from the
+/// object's live state (it tracks moving objects).
+pub fn overlay_anim(
+    o: Obj,
+    follow: bool,
+    build: impl Fn(&Mobject) -> Mobject + Send + Sync + 'static,
+    f: impl Fn(&Mobject, f64) -> Mobject + Send + Sync + 'static,
+) -> Animation {
+    Animation::new(AnimKind::Overlay {
+        obj: o,
+        build: Arc::new(build),
+        f: Arc::new(f),
+        follow,
+    })
+}
+
+/// manim's `ShowPassingFlash` frame: the window `[x - w, x]` of the path where
+/// `x = alpha * (1 + w)`.
+pub fn passing_flash_partial(m: &Mobject, alpha: f64, time_width: f64) -> Mobject {
+    let x = alpha * (1.0 + time_width);
+    m.clone()
+        .partial((x - time_width).clamp(0.0, 1.0), x.clamp(0.0, 1.0))
+}
+
+/// manim's `VShowPassingFlash` frame: a gaussian bump of stroke width travels
+/// along the stroke, tapered at both ends by `taper_width`. Strokes are cut into
+/// short pieces with individual widths.
+pub fn v_passing_flash_frame(
+    m: &Mobject,
+    alpha: f64,
+    time_width: f64,
+    taper_width: f64,
+) -> Mobject {
+    let tw = time_width.max(1e-6);
+    let sigma = tw / 6.0;
+    let mu = lerp(-tw / 2.0, 1.0 + tw / 2.0, alpha);
+    let lo = (mu - 3.0 * sigma).max(0.0);
+    let hi = (mu + 3.0 * sigma).min(1.0);
+    // linear ramp over `taper_width` at both ends (continuous version of manim's kernel)
+    let taper = |x: f64| {
+        if taper_width <= 0.0 {
+            1.0
+        } else {
+            (x.min(1.0 - x) / taper_width).clamp(0.0, 1.0)
+        }
+    };
+    let mut out = Mobject::empty();
+    if hi <= lo {
+        return out;
+    }
+    const PIECES: usize = 48;
+    for leaf in m.leaves() {
+        if leaf.path.is_empty() || !leaf.style.has_stroke() {
+            continue;
+        }
+        let w0 = leaf.style.stroke_width;
+        for i in 0..PIECES {
+            let a = lerp(lo, hi, i as f64 / PIECES as f64);
+            let b = lerp(lo, hi, (i + 1) as f64 / PIECES as f64);
+            let x = (a + b) / 2.0;
+            let z = (x - mu) / sigma;
+            let k = (-0.5 * z * z).exp() * taper(x);
+            if k < 1e-3 {
+                continue;
+            }
+            let mut piece = Mobject::from_path_styled(leaf.path.partial(a, b), leaf.style.clone());
+            piece.style.fill_opacity = 0.0;
+            piece.style.stroke_width = w0 * k as f32;
+            out.push(piece);
+        }
+    }
+    out
 }
 
 /// Builder returned by [`Obj::animate`]: records changes, then animates to the result.

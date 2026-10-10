@@ -95,6 +95,12 @@ impl NumberLine {
         self.color = c;
         self
     }
+    /// manim's `UnitInterval`: 0 to 1 in steps of 0.1, numbered with 1 decimal.
+    pub fn unit_interval(length: f64) -> Self {
+        let mut nl = NumberLine::new(0.0, 1.0, 0.1).length(length);
+        nl.decimals = 1;
+        nl
+    }
     /// Scene point for value `v` (manim's `n2p`).
     pub fn n2p(&self, v: f64) -> Vec2 {
         let u = (v - self.min) / (self.max - self.min);
@@ -805,6 +811,88 @@ pub fn stream_lines(
     g
 }
 
+/// A vector field of `f(p, t)` drawn at time `t` (manim's `TimeVaryingVectorField`;
+/// see [`crate::scene::Scene::time_varying_vector_field`] for a live object).
+pub fn time_varying_vector_field(
+    f: impl Fn(Vec2, f64) -> Vec2,
+    t: f64,
+    x_range: (f64, f64, f64),
+    y_range: (f64, f64, f64),
+    length_scale: f64,
+    colors: &[Color],
+) -> Mobject {
+    vector_field(|p| f(p, t), x_range, y_range, length_scale, colors)
+}
+
+/// Stream lines that keep flowing: each line shows a travelling flash of stroke
+/// width with its own phase (manim's `AnimatedStreamLines`). Build once, then
+/// call [`AnimatedStreamLines::frame`] with the elapsed time (pure function of time).
+#[derive(Clone, Debug)]
+pub struct AnimatedStreamLines {
+    /// (line, phase offset in seconds, cycle duration)
+    pub lines: Vec<(Mobject, f64, f64)>,
+    pub time_width: f64,
+}
+
+impl AnimatedStreamLines {
+    /// `lines` = children of e.g. [`stream_lines`]; lines start within `lag_range`
+    /// seconds; each cycle lasts `virtual_time / rate_multiple`.
+    pub fn new(lines: &Mobject, lag_range: f64, virtual_time: f64, rate_multiple: f64) -> Self {
+        let mut rng = Rng::new(11);
+        let run = virtual_time / rate_multiple.max(1e-9);
+        Self {
+            lines: lines
+                .children
+                .iter()
+                .map(|l| (l.clone(), lag_range * rng.next_f64(), run))
+                .collect(),
+            time_width: 1.0,
+        }
+    }
+    /// The flowing lines `t` seconds after start.
+    pub fn frame(&self, t: f64) -> Mobject {
+        Mobject::group(self.lines.iter().map(|(l, phase, run)| {
+            let lt = (t - phase).max(0.0);
+            if lt <= 0.0 {
+                return Mobject::empty();
+            }
+            let a = (lt % run) / run;
+            crate::anim::v_passing_flash_frame(l, a, self.time_width, 0.05)
+        }))
+    }
+}
+
+impl crate::scene::Scene {
+    /// Live `AnimatedStreamLines` for the field `f` (manim's defaults: lag range 4 s,
+    /// 3 s per cycle).
+    pub fn animated_stream_lines(
+        &mut self,
+        f: impl Fn(Vec2) -> Vec2,
+        x_range: (f64, f64, f64),
+        y_range: (f64, f64, f64),
+        colors: &[Color],
+    ) -> crate::scene::Obj {
+        let sl =
+            AnimatedStreamLines::new(&stream_lines(f, x_range, y_range, colors), 4.0, 3.0, 1.0);
+        self.always_redraw(move |ctx| sl.frame(ctx.elapsed))
+    }
+    /// A live vector field of `f(p, t)` with `t` = seconds since it was added
+    /// (manim's `TimeVaryingVectorField`).
+    pub fn time_varying_vector_field(
+        &mut self,
+        f: impl Fn(Vec2, f64) -> Vec2 + Send + Sync + 'static,
+        x_range: (f64, f64, f64),
+        y_range: (f64, f64, f64),
+        length_scale: f64,
+        colors: &[Color],
+    ) -> crate::scene::Obj {
+        let colors = colors.to_vec();
+        self.always_redraw(move |ctx| {
+            time_varying_vector_field(&f, ctx.elapsed, x_range, y_range, length_scale, &colors)
+        })
+    }
+}
+
 // ----------------------------------------------------------------- charts
 
 /// Vertical bar chart (manim's `BarChart`). Children: axes, bars, labels, values.
@@ -992,12 +1080,18 @@ pub fn table_from(cells: Vec<Vec<Mobject>>, size: f64) -> Mobject {
 
 /// Matrix with brackets; children: [entries (rows), left bracket, right bracket].
 pub fn matrix(rows: &[Vec<&str>], size: f64) -> Mobject {
-    let nr = rows.len();
-    let nc = rows.iter().map(|r| r.len()).max().unwrap_or(0);
     let cells: Vec<Vec<Mobject>> = rows
         .iter()
         .map(|r| r.iter().map(|s| tex_sized(s, size, WHITE)).collect())
         .collect();
+    mobject_matrix(cells, size)
+}
+
+/// Matrix of arbitrary mobjects with brackets (manim's `MobjectMatrix`);
+/// children: [entries (rows), left bracket, right bracket].
+pub fn mobject_matrix(cells: Vec<Vec<Mobject>>, size: f64) -> Mobject {
+    let nr = cells.len();
+    let nc = cells.iter().map(|r| r.len()).max().unwrap_or(0);
     let cw = cells
         .iter()
         .flatten()
@@ -1055,6 +1149,51 @@ pub fn decimal_matrix(values: &[Vec<f64>], decimals: usize, size: f64) -> Mobjec
     matrix(&refs, size)
 }
 
+/// Integer matrix (manim's `IntegerMatrix`).
+pub fn integer_matrix(values: &[Vec<i64>], size: f64) -> Mobject {
+    let strs: Vec<Vec<String>> = values
+        .iter()
+        .map(|r| r.iter().map(|v| v.to_string()).collect())
+        .collect();
+    let refs: Vec<Vec<&str>> = strs
+        .iter()
+        .map(|r| r.iter().map(|s| s.as_str()).collect())
+        .collect();
+    matrix(&refs, size)
+}
+
+/// Table of integers (manim's `IntegerTable`).
+pub fn integer_table(values: &[Vec<i64>], size: f64) -> Mobject {
+    table_from(
+        values
+            .iter()
+            .map(|r| {
+                r.iter()
+                    .map(|v| tex_sized(&v.to_string(), size, WHITE))
+                    .collect()
+            })
+            .collect(),
+        size,
+    )
+}
+
+/// Table of decimals with a fixed number of places (manim's `DecimalTable`).
+pub fn decimal_table(values: &[Vec<f64>], decimals: usize, size: f64) -> Mobject {
+    let fmt = DecimalNumber::new(decimals).size(size);
+    table_from(
+        values
+            .iter()
+            .map(|r| r.iter().map(|v| fmt.build(*v)).collect())
+            .collect(),
+        size,
+    )
+}
+
+/// Table of arbitrary mobjects (manim's `MobjectTable`); same as [`table_from`].
+pub fn mobject_table(cells: Vec<Vec<Mobject>>, size: f64) -> Mobject {
+    table_from(cells, size)
+}
+
 // ----------------------------------------------------------------- numbers
 
 /// A formatted number (manim's `DecimalNumber`/`Integer`). Build each frame with
@@ -1090,6 +1229,10 @@ impl DecimalNumber {
             decimals,
             ..Default::default()
         }
+    }
+    /// Zero decimal places (manim's `Integer`).
+    pub fn integer() -> Self {
+        Self::new(0)
     }
     pub fn size(mut self, s: f64) -> Self {
         self.size = s;
@@ -1140,6 +1283,11 @@ impl DecimalNumber {
             .color(self.color)
             .build()
     }
+}
+
+/// An integer display (manim's `Integer`).
+pub fn integer(v: i64) -> Mobject {
+    DecimalNumber::integer().build(v as f64)
 }
 
 /// `label = value` display (manim's `Variable`).
@@ -1355,6 +1503,11 @@ pub fn network(
     Mobject::group([es, vs])
 }
 
+/// Directed network graph (manim's `DiGraph`): [`network`] with arrow edges.
+pub fn digraph(labels: &[&str], edges: &[(usize, usize)], layout: Layout, scale: f64) -> Mobject {
+    network(labels, edges, layout, true, scale)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1415,5 +1568,64 @@ mod tests {
         assert!(ms.len() > 20);
         let vf = vector_field(|p| p.perp(), (-2.0, 2.0, 1.0), (-2.0, 2.0, 1.0), 0.5, &[]);
         assert!(vf.children.len() >= 20);
+    }
+
+    #[test]
+    fn numbers_tables_fields() {
+        assert_eq!(DecimalNumber::integer().format(41.6), "42");
+        assert!(integer(7).leaf_count() >= 1);
+        let m = integer_matrix(&[vec![1, -2], vec![3, 4]], 0.5);
+        assert_eq!(m.children[0].children.len(), 2);
+        let mm = mobject_matrix(vec![vec![circle(0.2), square(0.3)]], 0.5);
+        assert_eq!(mm.children[0].children[0].children.len(), 2);
+        assert_eq!(
+            integer_table(&[vec![1, 2, 3]], 0.4).children[1].children[0]
+                .children
+                .len(),
+            3
+        );
+        assert_eq!(
+            decimal_table(&[vec![1.5], vec![2.25]], 2, 0.4).children[1]
+                .children
+                .len(),
+            2
+        );
+        assert_eq!(
+            mobject_table(vec![vec![dot(Vec2::ZERO)]], 0.4)
+                .children
+                .len(),
+            2
+        );
+        let ui = NumberLine::unit_interval(10.0);
+        assert_eq!(ui.ticks().len(), 11);
+        assert!((ui.n2p(1.0).x - 5.0).abs() < 1e-9);
+        let g = digraph(&["a", "b"], &[(0, 1)], Layout::Circular, 1.5);
+        assert_eq!(
+            g.children[0].children[0].children.len(),
+            2,
+            "edge is an arrow"
+        );
+        let f0 = time_varying_vector_field(
+            |p, t| p * t,
+            0.0,
+            (-1.0, 1.0, 1.0),
+            (-1.0, 1.0, 1.0),
+            1.0,
+            &[],
+        );
+        let f1 = time_varying_vector_field(
+            |p, t| p * t,
+            1.0,
+            (-1.0, 1.0, 1.0),
+            (-1.0, 1.0, 1.0),
+            1.0,
+            &[],
+        );
+        assert!(f0.children.is_empty() && f1.children.len() == 8);
+        let sl = stream_lines(|p| p.perp(), (-2.0, 2.0, 1.0), (-2.0, 2.0, 1.0), &[]);
+        let asl = AnimatedStreamLines::new(&sl, 1.0, 3.0, 1.0);
+        assert!(asl.frame(0.0).leaf_count() == 0);
+        assert!(asl.frame(2.5).leaf_count() > 0);
+        assert_eq!(asl.frame(2.5), asl.frame(2.5));
     }
 }

@@ -733,6 +733,381 @@ pub fn axes3d(range: f64, step: f64) -> Mesh {
     m
 }
 
+// ------------------------------------------------------- more manim 3D mobjects
+
+/// Flat square in the xy-plane (manim's `Square3D`).
+pub fn square3d(side: f64, color: Color) -> Mesh {
+    let h = side / 2.0;
+    Mesh {
+        faces: vec![face(
+            vec![
+                v3(-h, -h, 0.0),
+                v3(h, -h, 0.0),
+                v3(h, h, 0.0),
+                v3(-h, h, 0.0),
+            ],
+            color,
+        )],
+        ..Default::default()
+    }
+}
+
+/// Flat disk in the xy-plane (manim's `Disk3D`).
+pub fn disk3d(radius: f64, res: usize, color: Color) -> Mesh {
+    let n = res.max(8);
+    Mesh {
+        faces: vec![face(
+            (0..n)
+                .map(|i| {
+                    let a = TAU * i as f64 / n as f64;
+                    v3(radius * a.cos(), radius * a.sin(), 0.0)
+                })
+                .collect(),
+            color,
+        )],
+        ..Default::default()
+    }
+}
+
+/// Box built from flat faces with an outline (manim's `VPrism`).
+pub fn v_prism(dx: f64, dy: f64, dz: f64, fill: Color, stroke: Option<(Color, f32)>) -> Mesh {
+    let mut m = prism(dx, dy, dz, fill);
+    for f in &mut m.faces {
+        f.stroke = stroke;
+    }
+    m
+}
+
+/// Cube built from flat faces with an outline (manim's `VCube`).
+pub fn v_cube(side: f64, fill: Color, stroke: Option<(Color, f32)>) -> Mesh {
+    v_prism(side, side, side, fill, stroke)
+}
+
+fn sample_subpath(sp: &SubPath) -> Vec<Vec2> {
+    let mut pts = vec![sp.start];
+    for i in 0..sp.segs.len() {
+        let s = sp.segs[i];
+        let p0 = sp.seg_start(i);
+        let straight = (s.c1 - p0.lerp(s.p, 1.0 / 3.0)).length() < 1e-9
+            && (s.c2 - p0.lerp(s.p, 2.0 / 3.0)).length() < 1e-9;
+        let k = if straight { 1 } else { 8 };
+        for j in 1..=k {
+            pts.push(s.eval(p0, j as f64 / k as f64));
+        }
+    }
+    if pts.len() > 2 && pts[0].distance(*pts.last().unwrap()) < 1e-9 {
+        pts.pop();
+    }
+    pts
+}
+
+/// Extrude a 2D mobject's outline into a prism (manim's `Prismify`): the shape
+/// at z = 0, a copy shifted by `depth * dir`, and side walls. Curves are sampled.
+pub fn prismify(m: &Mobject, depth: f64, dir: Vec3, color: Color) -> Mesh {
+    let v = dir.normalize() * depth;
+    let mut mesh = Mesh::new();
+    for sp in &m.family_path().subpaths {
+        let pts = sample_subpath(sp);
+        if pts.len() < 2 {
+            continue;
+        }
+        let bottom: Vec<Vec3> = pts.iter().map(|p| p.extend(0.0)).collect();
+        let n = bottom.len();
+        let walls = if sp.closed || n > 2 { n } else { n - 1 };
+        for i in 0..walls {
+            let (a, b) = (bottom[i], bottom[(i + 1) % n]);
+            mesh.faces.push(face(vec![a, b, b + v, a + v], color));
+        }
+        if n >= 3 {
+            mesh.faces.push(face(bottom.clone(), color));
+            mesh.faces
+                .push(face(bottom.iter().rev().map(|p| *p + v).collect(), color));
+        }
+    }
+    mesh
+}
+
+/// Wireframe grid lines over a parametric surface (manim's `SurfaceMesh`):
+/// `res.0` lines of constant u and `res.1` lines of constant v.
+/// (`Mesh::wireframe` instead outlines every face of a surface mesh.)
+pub fn surface_mesh(
+    f: impl Fn(f64, f64) -> Vec3,
+    u: (f64, f64),
+    v: (f64, f64),
+    res: (usize, usize),
+    color: Color,
+    width: f32,
+) -> Mesh {
+    let samples = 48;
+    let mut m = Mesh::new();
+    for uu in linspace(u.0, u.1, res.0.max(2)) {
+        let pts: Vec<Vec3> = linspace(v.0, v.1, samples)
+            .into_iter()
+            .map(|vv| f(uu, vv))
+            .collect();
+        m.add(curve3d(&pts, color, width));
+    }
+    for vv in linspace(v.0, v.1, res.1.max(2)) {
+        let pts: Vec<Vec3> = linspace(u.0, u.1, samples)
+            .into_iter()
+            .map(|uu| f(uu, vv))
+            .collect();
+        m.add(curve3d(&pts, color, width));
+    }
+    m
+}
+
+/// Parametric surface coloured from an image (manim's `TexturedSurface`): each
+/// face takes the pixel at its (u, v) centre, u → image x, v → image y (bottom up).
+pub fn textured_surface(
+    f: impl Fn(f64, f64) -> Vec3,
+    u: (f64, f64),
+    v: (f64, f64),
+    res: (usize, usize),
+    image: &tiny_skia::Pixmap,
+) -> Mesh {
+    let (nu, nv) = (res.0.max(1), res.1.max(1));
+    let (w, h) = (image.width().max(1), image.height().max(1));
+    let mut m = surface(f, u, v, (nu, nv), &[WHITE]);
+    // `surface` pushes faces in (i, j) order
+    for (k, fc) in m.faces.iter_mut().enumerate() {
+        let (i, j) = (k / nv, k % nv);
+        let su = (i as f64 + 0.5) / nu as f64;
+        let sv = (j as f64 + 0.5) / nv as f64;
+        let px = ((su * w as f64) as u32).min(w - 1);
+        let py = (((1.0 - sv) * h as f64) as u32).min(h - 1);
+        if let Some(c) = image.pixel(px, py) {
+            let c = c.demultiply();
+            fc.color = rgb8(c.red(), c.green(), c.blue());
+            fc.opacity = c.alpha() as f32 / 255.0;
+        }
+    }
+    m
+}
+
+/// Parse a Wavefront OBJ (`v` and `f` records; `vt`/`vn` indices, negative
+/// indices and polygons are supported; materials ignored). Coordinates are kept as-is.
+pub fn parse_obj(src: &str, color: Color) -> anyhow::Result<Mesh> {
+    let mut verts: Vec<Vec3> = Vec::new();
+    let mut mesh = Mesh::new();
+    for (ln, line) in src.lines().enumerate() {
+        let line = line.split('#').next().unwrap_or("").trim();
+        let mut it = line.split_whitespace();
+        match it.next() {
+            Some("v") => {
+                let c: Vec<f64> = it
+                    .take(3)
+                    .map(|x| x.parse::<f64>())
+                    .collect::<Result<_, _>>()
+                    .map_err(|e| anyhow::anyhow!("line {}: bad vertex: {e}", ln + 1))?;
+                if c.len() < 3 {
+                    anyhow::bail!("line {}: vertex needs 3 coordinates", ln + 1);
+                }
+                verts.push(v3(c[0], c[1], c[2]));
+            }
+            Some("f") => {
+                let mut fv = Vec::new();
+                for tok in it {
+                    let idx: i64 = tok
+                        .split('/')
+                        .next()
+                        .unwrap_or("")
+                        .parse()
+                        .map_err(|e| anyhow::anyhow!("line {}: bad face index: {e}", ln + 1))?;
+                    let i = if idx < 0 {
+                        verts.len() as i64 + idx
+                    } else {
+                        idx - 1
+                    };
+                    let p = verts
+                        .get(usize::try_from(i).unwrap_or(usize::MAX))
+                        .ok_or_else(|| {
+                            anyhow::anyhow!("line {}: face index out of range", ln + 1)
+                        })?;
+                    fv.push(*p);
+                }
+                if fv.len() >= 3 {
+                    mesh.faces.push(face(fv, color));
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(mesh)
+}
+
+/// Load a Wavefront `.obj` file as a mesh (manim's `ThreeDModel`): converted from
+/// the OBJ y-up convention to z-up, centred, and scaled to `height` along z.
+pub fn three_d_model(
+    path: impl AsRef<std::path::Path>,
+    height: f64,
+    color: Color,
+) -> anyhow::Result<Mesh> {
+    let src = std::fs::read_to_string(path.as_ref())?;
+    let m = parse_obj(&src, color)?.map_points(|p| v3(p.x, -p.z, p.y));
+    let (mut lo, mut hi) = (
+        v3(f64::MAX, f64::MAX, f64::MAX),
+        v3(f64::MIN, f64::MIN, f64::MIN),
+    );
+    for f in &m.faces {
+        for p in &f.verts {
+            lo = v3(lo.x.min(p.x), lo.y.min(p.y), lo.z.min(p.z));
+            hi = v3(hi.x.max(p.x), hi.y.max(p.y), hi.z.max(p.z));
+        }
+    }
+    if m.faces.is_empty() {
+        return Ok(m);
+    }
+    let c = (lo + hi) * 0.5;
+    let s = height / (hi.z - lo.z).max(1e-9);
+    Ok(m.map_points(move |p| (p - c) * s))
+}
+
+/// Convex hull of 3D points as a polyhedron (manim's `ConvexHull3D`); coplanar
+/// triangles are merged into polygon faces. Incremental algorithm, O(n²).
+pub fn convex_hull_3d(points: &[Vec3], color: Color) -> Mesh {
+    let tris = hull_triangles(points);
+    // group triangles by plane
+    let mut planes: Vec<(Vec3, f64, Vec<usize>)> = Vec::new();
+    let scale = points.iter().map(|p| p.length()).fold(1e-9, f64::max);
+    let eps = 1e-7 * scale;
+    for t in &tris {
+        let (a, b, c) = (points[t[0]], points[t[1]], points[t[2]]);
+        let n = (b - a).cross(c - a).normalize();
+        let d = n.dot(a);
+        match planes
+            .iter_mut()
+            .find(|(m, e, _)| (*m - n).length() < 1e-6 && (e - d).abs() < eps)
+        {
+            Some(pl) => pl.2.extend_from_slice(t),
+            None => planes.push((n, d, t.to_vec())),
+        }
+    }
+    let mut mesh = Mesh::new();
+    for (n, _, mut idx) in planes {
+        idx.sort_unstable();
+        idx.dedup();
+        let pts: Vec<Vec3> = idx.iter().map(|&i| points[i]).collect();
+        let c = pts.iter().fold(Vec3::ZERO, |a, p| a + *p) / pts.len() as f64;
+        let a = if n.x.abs() < 0.9 { Vec3::X } else { Vec3::Y };
+        let e1 = n.cross(a).normalize();
+        let e2 = n.cross(e1);
+        let flat: Vec<Vec2> = pts
+            .iter()
+            .map(|p| v2((*p - c).dot(e1), (*p - c).dot(e2)))
+            .collect();
+        let hull = crate::boolean::convex_hull_points(&flat);
+        let verts: Vec<Vec3> = hull.iter().map(|q| c + e1 * q.x + e2 * q.y).collect();
+        if verts.len() >= 3 {
+            mesh.faces.push(face(verts, color));
+        }
+    }
+    mesh
+}
+
+/// Outward-oriented hull triangles (indices into `pts`).
+fn hull_triangles(pts: &[Vec3]) -> Vec<[usize; 3]> {
+    let n = pts.len();
+    if n < 4 {
+        return if n == 3 { vec![[0, 1, 2]] } else { vec![] };
+    }
+    let scale = pts.iter().map(|p| p.length()).fold(1e-9, f64::max);
+    let eps = 1e-9 * scale;
+    // initial tetrahedron from extreme points
+    let i0 = 0;
+    let i1 = (0..n)
+        .max_by(|&a, &b| {
+            (pts[a] - pts[i0])
+                .length()
+                .total_cmp(&(pts[b] - pts[i0]).length())
+        })
+        .unwrap();
+    let dir = (pts[i1] - pts[i0]).normalize();
+    let line_d = |p: Vec3| {
+        let q = p - pts[i0];
+        (q - dir * q.dot(dir)).length()
+    };
+    let i2 = (0..n)
+        .max_by(|&a, &b| line_d(pts[a]).total_cmp(&line_d(pts[b])))
+        .unwrap();
+    let nrm = (pts[i1] - pts[i0]).cross(pts[i2] - pts[i0]).normalize();
+    let plane_d = |p: Vec3| (p - pts[i0]).dot(nrm).abs();
+    let i3 = (0..n)
+        .max_by(|&a, &b| plane_d(pts[a]).total_cmp(&plane_d(pts[b])))
+        .unwrap();
+    if line_d(pts[i2]) < eps || plane_d(pts[i3]) < eps {
+        // degenerate (coplanar): a single flat polygon via the plane grouping
+        let c = pts.iter().fold(Vec3::ZERO, |a, p| a + *p) / n as f64;
+        let a = if nrm.x.abs() < 0.9 { Vec3::X } else { Vec3::Y };
+        let e1 = nrm.cross(a).normalize();
+        let e2 = nrm.cross(e1);
+        let flat: Vec<Vec2> = pts
+            .iter()
+            .map(|p| v2((*p - c).dot(e1), (*p - c).dot(e2)))
+            .collect();
+        let hull = crate::boolean::convex_hull_points(&flat);
+        let idx: Vec<usize> = hull
+            .iter()
+            .filter_map(|q| flat.iter().position(|f| (*f - *q).length() < 1e-12))
+            .collect();
+        return (1..idx.len().saturating_sub(1))
+            .map(|k| [idx[0], idx[k], idx[k + 1]])
+            .collect();
+    }
+    let interior = (pts[i0] + pts[i1] + pts[i2] + pts[i3]) * 0.25;
+    let orient = |t: [usize; 3]| -> [usize; 3] {
+        let (a, b, c) = (pts[t[0]], pts[t[1]], pts[t[2]]);
+        if (b - a).cross(c - a).dot(a - interior) < 0.0 {
+            [t[0], t[2], t[1]]
+        } else {
+            t
+        }
+    };
+    let mut faces: Vec<[usize; 3]> = vec![
+        orient([i0, i1, i2]),
+        orient([i0, i1, i3]),
+        orient([i0, i2, i3]),
+        orient([i1, i2, i3]),
+    ];
+    let seeds = [i0, i1, i2, i3];
+    for p in 0..n {
+        if seeds.contains(&p) {
+            continue;
+        }
+        let visible: Vec<bool> = faces
+            .iter()
+            .map(|t| {
+                let (a, b, c) = (pts[t[0]], pts[t[1]], pts[t[2]]);
+                (b - a).cross(c - a).normalize().dot(pts[p] - a) > eps
+            })
+            .collect();
+        if !visible.iter().any(|v| *v) {
+            continue;
+        }
+        let mut edges = std::collections::HashSet::new();
+        for (t, _) in faces.iter().zip(&visible).filter(|(_, v)| **v) {
+            for k in 0..3 {
+                edges.insert((t[k], t[(k + 1) % 3]));
+            }
+        }
+        let horizon: Vec<(usize, usize)> = edges
+            .iter()
+            .copied()
+            .filter(|(a, b)| !edges.contains(&(*b, *a)))
+            .collect();
+        faces = faces
+            .into_iter()
+            .zip(visible)
+            .filter(|(_, v)| !v)
+            .map(|(t, _)| t)
+            .collect();
+        for (a, b) in horizon {
+            faces.push([a, b, p]);
+        }
+    }
+    faces
+}
+
 /// Scene-side 3D camera rig: trackers for phi, theta, zoom (animate with `.to()`).
 #[derive(Clone, Copy, Debug)]
 pub struct CameraRig {
@@ -853,5 +1228,102 @@ mod tests {
         let b = s.eval_obj(o, 3.0, 0);
         assert!((a.center() - b.center()).length() < 1.0);
         assert_ne!(a.anchors(), b.anchors());
+    }
+
+    #[test]
+    fn obj_parsing() {
+        let src =
+            "# cube\nv 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\nv 0 0 1\nv 1 0 1\nv 1 1 1\nv 0 1 1\n\
+            vt 0 0\nvn 0 0 1\nf 1/1/1 2/1/1 3/1/1 4/1/1\nf -4 -3 -2 -1\nf 1//1 2//1 6//1\n";
+        let m = parse_obj(src, BLUE).unwrap();
+        assert_eq!(m.faces.len(), 3);
+        assert_eq!(m.faces[0].verts.len(), 4);
+        assert!((m.faces[1].verts[0] - v3(0.0, 0.0, 1.0)).length() < 1e-12);
+        assert!(parse_obj("f 1 2 3", BLUE).is_err());
+        let dir = std::env::temp_dir().join(format!("runwee-obj-{}.obj", std::process::id()));
+        std::fs::write(&dir, src).unwrap();
+        let model = three_d_model(&dir, 3.0, RED).unwrap();
+        let zs: Vec<f64> = model
+            .faces
+            .iter()
+            .flat_map(|f| f.verts.iter().map(|v| v.z))
+            .collect();
+        let (lo, hi) = zs
+            .iter()
+            .fold((f64::MAX, f64::MIN), |a, z| (a.0.min(*z), a.1.max(*z)));
+        assert!((hi - lo - 3.0).abs() < 1e-9 && (hi + lo).abs() < 1e-9);
+        let _ = std::fs::remove_file(dir);
+    }
+
+    #[test]
+    fn hull_and_extra_meshes() {
+        let mut pts = Vec::new();
+        for x in [-1.0, 1.0] {
+            for y in [-1.0, 1.0] {
+                for z in [-1.0, 1.0] {
+                    pts.push(v3(x, y, z));
+                }
+            }
+        }
+        let mut rng = Rng::new(3);
+        for _ in 0..40 {
+            pts.push(v3(
+                rng.range(-0.9, 0.9),
+                rng.range(-0.9, 0.9),
+                rng.range(-0.9, 0.9),
+            ));
+        }
+        let h = convex_hull_3d(&pts, BLUE);
+        assert_eq!(h.faces.len(), 6);
+        assert!(h.faces.iter().all(|f| f.verts.len() == 4));
+        // random cloud: every point lies inside every face plane
+        let cloud: Vec<Vec3> = (0..60)
+            .map(|_| v3(rng.normal(), rng.normal(), rng.normal()))
+            .collect();
+        let h = convex_hull_3d(&cloud, RED);
+        let c = cloud.iter().fold(Vec3::ZERO, |a, p| a + *p) / 60.0;
+        for f in &h.faces {
+            let n = (f.verts[1] - f.verts[0])
+                .cross(f.verts[2] - f.verts[0])
+                .normalize();
+            let n = if n.dot(f.verts[0] - c) < 0.0 { -n } else { n };
+            for p in &cloud {
+                assert!(n.dot(*p - f.verts[0]) < 1e-7);
+            }
+        }
+        // Euler: V − E + F = 2 for the triangulated hull
+        let tris = hull_triangles(&cloud);
+        let mut vs: Vec<usize> = tris.iter().flatten().copied().collect();
+        vs.sort_unstable();
+        vs.dedup();
+        assert_eq!(
+            vs.len() as i64 - (tris.len() as i64 * 3 / 2) + tris.len() as i64,
+            2
+        );
+
+        let p = prismify(&crate::shapes::square(2.0), 1.0, Vec3::Z, TEAL);
+        assert_eq!(p.faces.len(), 6);
+        let p = prismify(&crate::shapes::circle(1.0), 0.5, -Vec3::Z, TEAL);
+        assert!(p.faces.len() > 20);
+        assert_eq!(square3d(2.0, RED).faces.len(), 1);
+        assert_eq!(disk3d(1.0, 32, RED).faces[0].verts.len(), 32);
+        assert!(v_cube(1.0, BLUE, Some((WHITE, 2.0)))
+            .faces
+            .iter()
+            .all(|f| f.stroke.is_some()));
+        let sm = surface_mesh(
+            |u, v| v3(u, v, 0.0),
+            (0.0, 1.0),
+            (0.0, 1.0),
+            (5, 3),
+            GRAY,
+            1.0,
+        );
+        assert_eq!(sm.segs.len(), (5 + 3) * 47);
+        let mut img = tiny_skia::Pixmap::new(2, 1).unwrap();
+        img.fill(tiny_skia::Color::from_rgba8(255, 0, 0, 255));
+        img.pixels_mut()[1] = tiny_skia::ColorU8::from_rgba(0, 0, 255, 255).premultiply();
+        let ts = textured_surface(|u, v| v3(u, v, 0.0), (0.0, 1.0), (0.0, 1.0), (2, 2), &img);
+        assert!(ts.faces[0].color.r > 0.9 && ts.faces[3].color.b > 0.9);
     }
 }

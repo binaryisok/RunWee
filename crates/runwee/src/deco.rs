@@ -315,6 +315,84 @@ pub fn thought_bubble(text: &str, size: f64) -> Mobject {
     Mobject::group([g.fill(WHITE, 1.0).no_stroke(), t])
 }
 
+/// Body of a speech bubble around `content`: rounded box plus a stem towards
+/// the lower left (or lower right when `stem_right`), merged into one outline.
+fn speech_bubble_body(content: &Mobject, buff: f64, stem_right: bool) -> Mobject {
+    let b = content.bounds_or_origin().expand(buff);
+    let r = (b.height() * 0.25).min(0.25);
+    let rect = Mobject::from_path(rounded_rect_path(b.center(), b.width(), b.height(), r));
+    let (lp, rp) = (v2(b.min.x, b.min.y), v2(b.max.x, b.min.y));
+    let stem_h = 0.5 * b.height();
+    let tri = polygon(&[lp.lerp(rp, 0.2), lp.lerp(rp, 0.3), lp + DOWN * stem_h]);
+    let mut body = crate::boolean::union(&rect.fill(WHITE, 1.0), &tri.fill(WHITE, 1.0));
+    if stem_right {
+        // the stem lies within the box's x-range, so this mirrors in place
+        body = body.flip(UP);
+    }
+    body
+}
+
+/// manim's `Bubble`/`SpeechBubble` around any content: black body (opacity 0.8)
+/// with a white outline; the stem points down-left, or down-right with
+/// `stem_right`. Children: [body, content]. The stem tip is `bubble.edge(DL)` /
+/// `edge(DR)`.
+pub fn bubble(content: Mobject, buff: f64, stem_right: bool) -> Mobject {
+    let body = speech_bubble_body(&content, buff, stem_right)
+        .fill(BLACK, 0.8)
+        .stroke(WHITE, 3.0);
+    Mobject::group([body.with_tag("body"), content])
+}
+
+/// Two overlapping speech bubbles (manim's `DoubleSpeechBubble`): `left` speaks
+/// from the lower left, `right` (behind, offset up-right) from the lower right.
+pub fn double_speech_bubble(left: &str, right: &str, size: f64) -> Mobject {
+    let tl = text_sized(left, size, WHITE);
+    let tr = text_sized(right, size, WHITE);
+    let back = bubble(tr, size * 0.6, true);
+    let front = bubble(tl, size * 0.6, false);
+    let back = back.move_to(front.center() + v2(front.width() * 0.45, front.height() * 0.55));
+    Mobject::group([back, front])
+}
+
+/// Dartboard (manim's `Dartboard`): 20 alternating sectors with double and
+/// treble rings and a bullseye; children: [sectors, treble ring, double ring, bullseyes].
+pub fn dartboard(radius: f64) -> Mobject {
+    let n = 20;
+    let a = TAU / n as f64;
+    let ring = |colors: [Color; 2], inner: f64, outer: f64| {
+        Mobject::group((0..n).map(|i| {
+            annular_sector(inner * radius, outer * radius, i as f64 * a - a / 2.0, a)
+                .fill(colors[i % 2], 1.0)
+                .no_stroke()
+        }))
+    };
+    let mut g = Mobject::empty();
+    g.push(ring([GRAY_B, GRAY_E], 0.0, 1.0));
+    g.push(ring([GREEN_E, RED_E], 0.5, 0.55));
+    g.push(ring([GREEN_E, RED_E], 0.95, 1.0));
+    g.push(Mobject::group([
+        circle(0.07 * radius).fill(GREEN_E, 1.0).no_stroke(),
+        circle(0.035 * radius)
+            .fill(RED_E, 1.0)
+            .no_stroke()
+            .with_tag("bullseye"),
+    ]));
+    g
+}
+
+/// Video icon (manim's `VideoIcon`): a rounded screen with a play triangle cut out.
+pub fn video_icon(width: f64, color: Color) -> Mobject {
+    let h = width * 0.62;
+    let mut p = rounded_rect_path(Vec2::ZERO, width, h, h * 0.18);
+    let t = h * 0.22;
+    p.subpaths.extend(
+        Path::polyline(&[v2(-t * 0.8, t), v2(-t * 0.8, -t), v2(t * 1.1, 0.0)], true).subpaths,
+    );
+    let mut m = Mobject::from_path_styled(p, Style::filled(color));
+    m.style.fill_rule = FillRule::EvenOdd;
+    m
+}
+
 /// Analog clock showing `hours:minutes` (manim's `Clock`).
 pub fn clock(radius: f64, hours: f64, minutes: f64) -> Mobject {
     let mut g = Mobject::group([circle(radius).stroke(WHITE, 4.0).fill(GRAY_E, 1.0)]);
@@ -565,5 +643,20 @@ mod tests {
         ] {
             assert!(m.leaf_count() > 0 && m.width() > 0.0);
         }
+    }
+
+    #[test]
+    fn manim_drawings() {
+        let d = dartboard(3.0);
+        assert_eq!(d.children.len(), 4);
+        assert_eq!(d.children[0].children.len(), 20);
+        assert!((d.width() - 6.0).abs() < 0.05);
+        assert!(video_icon(1.2, BLUE_A).width() > 1.19);
+        let b = bubble(text_sized("hi", 0.4, WHITE), 0.25, false);
+        assert!(b.children[0].bottom().y < b.children[1].bottom().y - 0.3);
+        let b2 = bubble(text_sized("hi", 0.4, WHITE), 0.25, true);
+        // stem on the other side
+        assert!(b.children[0].edge(DL).x < b2.children[0].edge(DL).x + 1e-6);
+        assert_eq!(double_speech_bubble("a", "b", 0.4).children.len(), 2);
     }
 }
