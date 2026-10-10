@@ -685,6 +685,159 @@ fn register_text(engine: &mut Engine) {
     });
 }
 
+fn register_canvas(engine: &mut Engine) {
+    use runwee::canvas2d::{Canvas2D, CanvasPaint};
+    type C = Canvas2D;
+    engine.register_type_with_name::<C>("Canvas2D");
+    engine.register_type_with_name::<CanvasPaint>("CanvasPaint");
+    // canvas2d(w, h): fills the whole frame; canvas2d(w, h, x0, y0, x1, y1): inside a scene rect.
+    engine.register_fn("canvas2d", |w: N, h: N| {
+        let (fw, fh) = frame_size();
+        Canvas2D::new(f(&w), f(&h), Rect::from_center(ORIGIN, fw, fh))
+    });
+    engine.register_fn("canvas2d", |w: N, h: N, x0: N, y0: N, x1: N, y1: N| {
+        Canvas2D::new(
+            f(&w),
+            f(&h),
+            Rect::new(
+                v2(f(&x0).min(f(&x1)), f(&y0).min(f(&y1))),
+                v2(f(&x0).max(f(&x1)), f(&y0).max(f(&y1))),
+            ),
+        )
+    });
+    engine.register_fn("begin_path", |c: &mut C| c.begin_path());
+    engine.register_fn("close_path", |c: &mut C| c.close_path());
+    engine.register_fn("move_to", |c: &mut C, x: N, y: N| c.move_to(f(&x), f(&y)));
+    engine.register_fn("line_to", |c: &mut C, x: N, y: N| c.line_to(f(&x), f(&y)));
+    engine.register_fn("quadratic_curve_to", |c: &mut C, a: N, b: N, x: N, y: N| {
+        c.quadratic_curve_to(f(&a), f(&b), f(&x), f(&y))
+    });
+    engine.register_fn(
+        "bezier_curve_to",
+        |c: &mut C, a: N, b: N, d: N, e: N, x: N, y: N| {
+            c.bezier_curve_to(f(&a), f(&b), f(&d), f(&e), f(&x), f(&y))
+        },
+    );
+    engine.register_fn("arc", |c: &mut C, x: N, y: N, r: N, a0: N, a1: N| {
+        c.arc(f(&x), f(&y), f(&r), f(&a0), f(&a1), false)
+    });
+    engine.register_fn(
+        "arc",
+        |c: &mut C, x: N, y: N, r: N, a0: N, a1: N, ccw: bool| {
+            c.arc(f(&x), f(&y), f(&r), f(&a0), f(&a1), ccw)
+        },
+    );
+    engine.register_fn("arc_to", |c: &mut C, x1: N, y1: N, x2: N, y2: N, r: N| {
+        c.arc_to(f(&x1), f(&y1), f(&x2), f(&y2), f(&r))
+    });
+    engine.register_fn(
+        "ellipse",
+        |c: &mut C, x: N, y: N, rx: N, ry: N, rot: N, a0: N, a1: N| {
+            c.ellipse(f(&x), f(&y), f(&rx), f(&ry), f(&rot), f(&a0), f(&a1), false)
+        },
+    );
+    engine.register_fn("rect", |c: &mut C, x: N, y: N, w: N, h: N| {
+        c.rect(f(&x), f(&y), f(&w), f(&h))
+    });
+    engine.register_fn("round_rect", |c: &mut C, x: N, y: N, w: N, h: N, r: N| {
+        c.round_rect(f(&x), f(&y), f(&w), f(&h), &[f(&r)])
+    });
+    engine.register_fn("fill", |c: &mut C| c.fill());
+    engine.register_fn("fill", |c: &mut C, rule: &str| c.fill_rule(rule));
+    engine.register_fn("stroke", |c: &mut C| c.stroke());
+    engine.register_fn("fill_rect", |c: &mut C, x: N, y: N, w: N, h: N| {
+        c.fill_rect(f(&x), f(&y), f(&w), f(&h))
+    });
+    engine.register_fn("stroke_rect", |c: &mut C, x: N, y: N, w: N, h: N| {
+        c.stroke_rect(f(&x), f(&y), f(&w), f(&h))
+    });
+    engine.register_fn("clear_rect", |c: &mut C, x: N, y: N, w: N, h: N| {
+        c.clear_rect(f(&x), f(&y), f(&w), f(&h))
+    });
+    engine.register_fn("fill_text", |c: &mut C, t: &str, x: N, y: N| {
+        c.fill_text(t, f(&x), f(&y))
+    });
+    engine.register_fn("stroke_text", |c: &mut C, t: &str, x: N, y: N| {
+        c.stroke_text(t, f(&x), f(&y))
+    });
+    engine.register_fn("measure_text", |c: &mut C, t: &str| c.measure_text(t));
+    engine.register_fn("save", |c: &mut C| c.save());
+    engine.register_fn("restore", |c: &mut C| c.restore());
+    engine.register_fn("translate", |c: &mut C, x: N, y: N| {
+        c.translate(f(&x), f(&y))
+    });
+    engine.register_fn("rotate", |c: &mut C, a: N| c.rotate(f(&a)));
+    engine.register_fn("scale", |c: &mut C, x: N, y: N| c.scale(f(&x), f(&y)));
+    engine.register_fn(
+        "set_transform",
+        |c: &mut C, a: N, b: N, cc: N, d: N, e: N, ff: N| {
+            c.set_transform(f(&a), f(&b), f(&cc), f(&d), f(&e), f(&ff))
+        },
+    );
+    engine.register_fn("reset_transform", |c: &mut C| c.reset_transform());
+    engine.register_fn("set_line_dash", |c: &mut C, a: Array| {
+        c.set_line_dash(&floats(&a))
+    });
+    engine.register_set("fill_style", |c: &mut C, v: N| {
+        if let Some(p) = v.clone().try_cast::<CanvasPaint>() {
+            c.set_fill_style(p)
+        } else {
+            c.set_fill_style(CanvasPaint::Color(col(&v)))
+        }
+    });
+    engine.register_set("stroke_style", |c: &mut C, v: N| {
+        if let Some(p) = v.clone().try_cast::<CanvasPaint>() {
+            c.set_stroke_style(p)
+        } else {
+            c.set_stroke_style(CanvasPaint::Color(col(&v)))
+        }
+    });
+    engine.register_set("line_width", |c: &mut C, v: N| c.set_line_width(f(&v)));
+    engine.register_set("line_cap", |c: &mut C, v: &str| c.set_line_cap(v));
+    engine.register_set("line_join", |c: &mut C, v: &str| c.set_line_join(v));
+    engine.register_set("line_dash_offset", |c: &mut C, v: N| {
+        c.set_line_dash_offset(f(&v))
+    });
+    engine.register_set("global_alpha", |c: &mut C, v: N| c.set_global_alpha(f(&v)));
+    engine.register_set("global_composite_operation", |c: &mut C, v: &str| {
+        c.set_global_composite_operation(v)
+    });
+    engine.register_set("font", |c: &mut C, v: &str| c.set_font(v));
+    engine.register_set("text_align", |c: &mut C, v: &str| c.set_text_align(v));
+    engine.register_set("text_baseline", |c: &mut C, v: &str| c.set_text_baseline(v));
+    engine.register_set("shadow_color", |c: &mut C, v: &str| {
+        c.set_shadow_color_css(v)
+    });
+    engine.register_set("shadow_blur", |c: &mut C, v: N| c.set_shadow_blur(f(&v)));
+    // Gradients: stops = [[offset, colour], ...]
+    let stops = |a: &Array| -> Vec<(f32, Color)> {
+        a.iter()
+            .filter_map(|d| d.clone().try_cast::<Array>())
+            .filter(|p| p.len() >= 2)
+            .map(|p| (f(&p[0]) as f32, col(&p[1])))
+            .collect()
+    };
+    engine.register_fn(
+        "linear_gradient",
+        move |x0: N, y0: N, x1: N, y1: N, s: Array| CanvasPaint::Linear {
+            p0: v2(f(&x0), f(&y0)),
+            p1: v2(f(&x1), f(&y1)),
+            stops: stops(&s),
+        },
+    );
+    engine.register_fn(
+        "radial_gradient",
+        move |x0: N, y0: N, r0: N, x1: N, y1: N, r1: N, s: Array| CanvasPaint::Radial {
+            c0: v2(f(&x0), f(&y0)),
+            r0: f(&r0),
+            c1: v2(f(&x1), f(&y1)),
+            r1: f(&r1),
+            stops: stops(&s),
+        },
+    );
+    engine.register_fn("finish", |c: &mut C| c.take());
+}
+
 fn register_graph(engine: &mut Engine) {
     engine.register_type_with_name::<ScriptAxes>("Axes");
     engine.register_fn("axes", |x: Array, y: Array| {
@@ -2068,6 +2221,7 @@ fn build_engine() -> (Engine, Shared) {
     register_shapes(&mut engine);
     register_text(&mut engine);
     register_graph(&mut engine);
+    register_canvas(&mut engine);
     register_anims(&mut engine);
     register_scene(&mut engine, st.clone());
     register_3d_and_stem(&mut engine);

@@ -17,6 +17,7 @@ pub mod audio;
 pub mod background;
 pub mod biology;
 pub mod boolean;
+pub mod canvas2d;
 pub mod captions;
 pub mod chemistry;
 pub mod color;
