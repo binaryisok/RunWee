@@ -404,6 +404,77 @@ pub fn die_face(n: usize, size: f64) -> Mobject {
     g
 }
 
+/// Piano keyboard with `octaves` octaves (manim's `Piano`). Keys listed in `pressed`
+/// (0 = leftmost white key's C, counting every semitone) are highlighted.
+pub fn piano(octaves: usize, width: f64, pressed: &[usize], highlight: Color) -> Mobject {
+    let whites = 7 * octaves.max(1);
+    let kw = width / whites as f64;
+    let kh = kw * 4.5;
+    let x0 = -width / 2.0 + kw / 2.0;
+    // Semitone offsets of the white keys and of the black keys (with the white key they follow).
+    const WHITE_KEYS: [usize; 7] = [0, 2, 4, 5, 7, 9, 11];
+    const BLACK_KEYS: [(usize, usize); 5] = [(1, 0), (3, 1), (6, 3), (8, 4), (10, 5)];
+    let mut white = Mobject::group([]);
+    let mut black = Mobject::group([]);
+    for o in 0..octaves.max(1) {
+        for (i, semi) in WHITE_KEYS.iter().enumerate() {
+            let on = pressed.contains(&(o * 12 + semi));
+            let x = x0 + (o * 7 + i) as f64 * kw;
+            white.push(
+                rectangle(kw, kh)
+                    .fill(if on { highlight } else { WHITE }, 1.0)
+                    .stroke(GRAY_D, 2.0)
+                    .move_to(v2(x, 0.0)),
+            );
+        }
+        for (semi, after) in BLACK_KEYS {
+            let on = pressed.contains(&(o * 12 + semi));
+            let x = x0 + (o * 7 + after) as f64 * kw + kw / 2.0;
+            black.push(
+                rectangle(kw * 0.6, kh * 0.62)
+                    .fill(if on { highlight } else { BLACK }, 1.0)
+                    .stroke(BLACK, 1.0)
+                    .move_to(v2(x, kh * 0.19)),
+            );
+        }
+    }
+    Mobject::group([white, black])
+}
+
+/// Open laptop seen from the front (3b1b's `Laptop` prop); `screen` is placed on the display.
+pub fn laptop(width: f64, screen: Option<Mobject>) -> Mobject {
+    let sw = width * 0.86;
+    let sh = sw * 0.62;
+    let lid = rounded_rectangle(sw, sh, width * 0.03)
+        .fill(GRAY_E, 1.0)
+        .stroke(GRAY_B, 3.0)
+        .shift(v2(0.0, sh / 2.0));
+    let display = rectangle(sw * 0.92, sh * 0.86)
+        .fill(BLACK, 1.0)
+        .no_stroke()
+        .shift(v2(0.0, sh / 2.0));
+    let bh = width * 0.06;
+    let base = polygon(&[
+        v2(-sw / 2.0, 0.0),
+        v2(sw / 2.0, 0.0),
+        v2(width / 2.0, -bh),
+        v2(-width / 2.0, -bh),
+    ])
+    .fill(GRAY_C, 1.0)
+    .stroke(GRAY_B, 3.0);
+    let notch = rounded_rectangle(width * 0.16, bh * 0.35, bh * 0.15)
+        .fill(GRAY_D, 1.0)
+        .no_stroke()
+        .shift(v2(0.0, -bh * 0.3));
+    let mut g = Mobject::group([lid, display.clone(), base, notch]);
+    if let Some(m) = screen {
+        let (dw, dh) = (sw * 0.88, sh * 0.8);
+        let s = (dw / m.width().max(1e-9)).min(dh / m.height().max(1e-9));
+        g.push(m.scale(s).move_to(display.center()));
+    }
+    g
+}
+
 /// Gauge / speedometer at `value` in [0, 1] (manim's `Speedometer`).
 pub fn speedometer(radius: f64, value: f64) -> Mobject {
     let mut g = Mobject::group([arc(radius, -PI / 6.0, 4.0 * PI / 3.0).stroke(GRAY_B, 6.0)]);

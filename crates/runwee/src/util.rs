@@ -445,6 +445,70 @@ pub fn fit_text_on_n_lines(text: &str, width: f64, lines: usize, font: &str) -> 
     lo
 }
 
+/// `fillTextBox`: feed words one at a time and learn whether each starts a new line
+/// or no longer fits in a box of `max_lines` lines of `max_width`.
+pub struct FillTextBox {
+    max_width: f64,
+    max_lines: usize,
+    line_width: f64,
+    lines: usize,
+}
+
+/// Result of [`FillTextBox::add`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FillResult {
+    pub exceeds_box: bool,
+    pub new_line: bool,
+}
+
+impl FillTextBox {
+    pub fn new(max_width: f64, max_lines: usize) -> Self {
+        Self {
+            max_width,
+            max_lines: max_lines.max(1),
+            line_width: 0.0,
+            lines: 1,
+        }
+    }
+
+    /// Add `text` (usually a word followed by a space) set at `size` in `font`.
+    pub fn add(&mut self, text: &str, size: f64, font: &str, bold: bool) -> FillResult {
+        let (w, _) = measure_text(text, size, font, bold);
+        let trimmed = measure_text(text.trim_end(), size, font, bold).0;
+        if self.line_width > 0.0 && self.line_width + trimmed > self.max_width {
+            self.lines += 1;
+            self.line_width = w;
+            FillResult {
+                exceeds_box: self.lines > self.max_lines,
+                new_line: true,
+            }
+        } else {
+            self.line_width += w;
+            FillResult {
+                exceeds_box: false,
+                new_line: false,
+            }
+        }
+    }
+
+    /// Lines used so far.
+    pub fn lines(&self) -> usize {
+        self.lines
+    }
+}
+
+/// Split `text` into the words that fit a `max_width` × `max_lines` box and the rest.
+pub fn fill_text_box(text: &str, size: f64, max_width: f64, max_lines: usize) -> (String, String) {
+    let mut b = FillTextBox::new(max_width, max_lines);
+    let words: Vec<&str> = text.split_whitespace().collect();
+    for (i, w) in words.iter().enumerate() {
+        if b.add(&format!("{w} "), size, "sans", false).exceeds_box {
+            return (words[..i].join(" "), words[i..].join(" "));
+        }
+    }
+    (words.join(" "), String::new())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -481,5 +545,15 @@ mod tests {
         let s = fit_text("Hello", 4.0, "Inter", false);
         assert!((measure_text("Hello", s, "Inter", false).0 - 4.0).abs() < 1e-6);
         assert!(fit_text_on_n_lines("the quick brown fox jumps", 3.0, 2, "Inter") > 0.1);
+    }
+
+    #[test]
+    fn fill_text_box_splits_overflow() {
+        let text = "one two three four five six seven eight nine ten eleven twelve";
+        let (fits, rest) = fill_text_box(text, 0.4, 3.0, 2);
+        assert!(!fits.is_empty() && !rest.is_empty());
+        assert_eq!(format!("{fits} {rest}"), text);
+        let (all, none) = fill_text_box("short", 0.4, 3.0, 2);
+        assert_eq!((all.as_str(), none.as_str()), ("short", ""));
     }
 }

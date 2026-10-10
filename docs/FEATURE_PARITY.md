@@ -62,8 +62,7 @@ time, `.rhai` scripts instead of React components).
 | [x] Matrix, DecimalMatrix, IntegerMatrix, MobjectMatrix | | 6 |
 | [x] Graph / DiGraph (networks with layouts) | `network` (circular/spring/grid/tree layouts, directed edges) | 6 |
 | [x] SVGMobject, ImageMobject, VideoMobject, DashedVMobject, CurvesAsSubmobjects | `svg_mobject`, `image_mobject`, `Scene::add_video`, `dashed_mobject`, `curves_as_submobjects` | 8 |
-| [x] SpeechBubble, ThoughtBubble, Clock, Lightbulb, DieFace, Speedometer | `deco::*` | 9 |
-| [ ] Laptop, Piano (3b1b-specific props) | — *not ported* | — |
+| [x] SpeechBubble, ThoughtBubble, Clock, Lightbulb, Laptop, DieFace, Speedometer, Piano | `deco::*` (`laptop`, `piano`, …) | 9 |
 | [x] GlowDot, DotCloud, TrueDot, VHighlight | `glow_dot`, `dot_cloud`, `dot`, `v_highlight` | 9 |
 | [x] Surface, Sphere, Cube, Prism, Cone, Cylinder, Torus, Line3D, Arrow3D, Dot3D, polyhedra | `three_d::*` | 9 |
 | [x] MandelbrotFractal, JuliaFractal, NewtonFractal | `mandelbrot`, `julia`, `newton_fractal` | 9 |
@@ -86,8 +85,7 @@ time, `.rhai` scripts instead of React components).
 | [x] `@remotion/effects` (CPU subset): blur, brightness, contrast, saturation, hue, grayscale, invert, sepia/duotone, tint, vignette, pixelate, noise, scanlines, halftone, chromatic aberration, glow, drop-shadow, zoom-blur, mirror, wave, fisheye, emboss, levels, exposure, posterize | `effects::*` | 8 |
 | [x] `@remotion/shapes`: arrow, callout, circle, ellipse, heart, pie, polygon, rect, spark, star, triangle | `block_arrow`, `callout`, `heart`, `pie`, `spark`, `shapes::*` | 8 |
 | [x] `@remotion/paths`: evolvePath, interpolatePath, warpPath, getLength, getPointAtLength, getTangentAtLength, reversePath, parsePath | `util::*`, `Path::length`, `Path::reversed` | 8 |
-| [x] `@remotion/layout-utils`: measureText, fitText, fitTextOnNLines | `measure_text`, `fit_text`, `fit_text_on_n_lines` | 8 |
-| [ ] `fillTextBox` | — *use `Text::max_width` wrapping* | — |
+| [x] `@remotion/layout-utils`: measureText, fitText, fitTextOnNLines, fillTextBox | `measure_text`, `fit_text`, `fit_text_on_n_lines`, `FillTextBox` / `fill_text_box` | 8 |
 | [x] `@remotion/motion-blur`: Trail, CameraMotionBlur | `compose::MotionBlur` (trail mode) | 8 |
 | [x] `@remotion/rough-notation`: underline, box, circle, highlight, strike-through, crossed-off, bracket | `rough_annotation(RoughKind::…)` | 8 |
 | [x] `@remotion/light-leaks`, `@remotion/starburst`, `@remotion/rounded-text-box` | `light_leak`, `starburst`, `rounded_text_box` | 8 |

@@ -548,6 +548,15 @@ fn register_shapes(engine: &mut Engine) {
     r!("clock", |r: N, h: N, m: N| clock(f(&r), f(&h), f(&m)));
     r!("lightbulb", |s: N, on: bool| lightbulb(f(&s), on));
     r!("die_face", |n: N, s: N| die_face(f(&n) as usize, f(&s)));
+    r!("piano", |octaves: N, w: N, pressed: Array, c: N| {
+        let keys: Vec<usize> = floats(&pressed).into_iter().map(|k| k as usize).collect();
+        piano(f(&octaves) as usize, f(&w), &keys, col(&c))
+    });
+    r!("laptop", |w: N| laptop(f(&w), None));
+    r!("laptop", |w: N, screen: Mobject| laptop(
+        f(&w),
+        Some(screen)
+    ));
     r!("speedometer", |r: N, v: N| speedometer(f(&r), f(&v)));
     r!("progress_bar", |w: N, p: N, c: N| progress_bar(
         f(&w),
@@ -663,6 +672,13 @@ fn register_text(engine: &mut Engine) {
             .color(col(&c))
             .build(f(&v))
     });
+    engine.register_fn(
+        "fill_text_box",
+        |t: &str, size: N, w: N, lines: N| -> Array {
+            let (a, b) = fill_text_box(t, f(&size), f(&w), f(&lines) as usize);
+            vec![a.into(), b.into()]
+        },
+    );
     engine.register_fn("fit_text", |s: &str, w: N| {
         fit_text(s, f(&w), "Inter", false)
     });
