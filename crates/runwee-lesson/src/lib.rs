@@ -408,9 +408,7 @@ fn header_objects(s: &mut Scene, title: &str, part: &str, p: &PresetInfo) -> Vec
     );
     let kicker = place_tl(kicker, -7.0, 3.75);
     out.push(s.register(kicker));
-    let name = bold_text(&p.name, 0.4, ink());
-    let name = place_tl(name, -7.0, 3.45);
-    out.push(s.register(name));
+    let mut name_right = 6.95;
     if !p.constraint_eq.is_empty() {
         let t = text_sized(&p.constraint_eq, 0.27, accent());
         let w = t.width() + 0.5;
@@ -422,8 +420,19 @@ fn header_objects(s: &mut Scene, title: &str, part: &str, p: &PresetInfo) -> Vec
         ]);
         let d = v2(6.95 - chip.right().x, 3.62 - chip.top().y);
         let chip = chip.shift(d);
+        name_right = chip.left().x - 0.3;
         out.push(s.register(chip));
     }
+    // The preset name shrinks rather than running under the chip.
+    let name = bold_text(&p.name, 0.4, ink());
+    let room = name_right + 7.0;
+    let name = if name.width() > room {
+        name.set_width(room)
+    } else {
+        name
+    };
+    let name = place_tl(name, -7.0, 3.45);
+    out.push(s.register(name));
     out
 }
 
@@ -446,7 +455,7 @@ fn overlay_mobject(l: &OverlayLine) -> Mobject {
         "title" => paragraph(&l.text, w, 0.27, Align::Left).color(accent()),
         "math" => {
             let col = if l.hl { good() } else { ink() };
-            let m = tex_sized(&l.text, 0.4, col);
+            let m = tex_sized(&plain_math_to_tex(&l.text), 0.4, col);
             if m.width() < 1e-6 {
                 paragraph(&l.text, w, 0.22, Align::Left).color(col)
             } else {
@@ -458,6 +467,100 @@ fn overlay_mobject(l: &OverlayLine) -> Mobject {
             paragraph(&l.text, w, 0.21, Align::Left).color(col)
         }
     }
+}
+
+/// Overlay "math" lines are often plain notation rather than TeX
+/// (`v_ground = v_relative + v_carrier  (vectors)`). Upright the words, keep
+/// multi-letter subscripts together and turn wide gaps into `\quad`, so they
+/// don't render as runs of italic letters. Real TeX (with `\` or braces) is
+/// left alone.
+fn plain_math_to_tex(src: &str) -> String {
+    const FUNCS: [&str; 12] = [
+        "sin", "cos", "tan", "sec", "csc", "cot", "ln", "log", "exp", "max", "min", "lim",
+    ];
+    if src.contains('\\') || src.contains('{') {
+        return src.to_string();
+    }
+    let chars: Vec<char> = src.chars().collect();
+    let is_word = |w: &str| w.chars().count() >= 2 && !FUNCS.contains(&w);
+    let mut out = String::new();
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        if c.is_ascii_alphabetic() {
+            let mut j = i;
+            while j < chars.len() && chars[j].is_ascii_alphabetic() {
+                j += 1;
+            }
+            let word: String = chars[i..j].iter().collect();
+            let after_script = i > 0 && matches!(chars[i - 1], '_' | '^');
+            let glued = i > 0 && chars[i - 1].is_ascii_alphanumeric();
+            if after_script && word.len() >= 2 {
+                out.push_str(&format!("{{\\text{{{word}}}}}"));
+                i = j;
+                continue;
+            }
+            if !glued && is_word(&word) {
+                // Extend over following words separated by single spaces.
+                let mut end = j;
+                let mut phrase = word.clone();
+                // "Example-8", "x-axis": a hyphenated suffix stays in the text.
+                if end + 1 < chars.len()
+                    && chars[end] == '-'
+                    && chars[end + 1].is_ascii_alphanumeric()
+                {
+                    let mut e = end + 1;
+                    while e < chars.len() && chars[e].is_ascii_alphanumeric() {
+                        e += 1;
+                    }
+                    phrase.extend(&chars[end..e]);
+                    end = e;
+                }
+                loop {
+                    let mut k = end;
+                    if k < chars.len() && chars[k] == ' ' {
+                        k += 1;
+                    } else {
+                        break;
+                    }
+                    let mut e = k;
+                    while e < chars.len() && chars[e].is_ascii_alphabetic() {
+                        e += 1;
+                    }
+                    let next: String = chars[k..e].iter().collect();
+                    let ends_clean =
+                        e == chars.len() || !chars[e].is_ascii_alphanumeric() && chars[e] != '_';
+                    if e > k && is_word(&next) && ends_clean {
+                        phrase.push(' ');
+                        phrase.push_str(&next);
+                        end = e;
+                    } else {
+                        break;
+                    }
+                }
+                out.push_str(&format!("\\text{{{phrase}}}"));
+                i = end;
+                continue;
+            }
+            if !glued && FUNCS.contains(&word.as_str()) {
+                out.push_str(&format!("\\{word} "));
+            } else {
+                out.push_str(&word);
+            }
+            i = j;
+            continue;
+        }
+        if c == ' ' && chars.get(i + 1) == Some(&' ') {
+            while i < chars.len() && chars[i] == ' ' {
+                i += 1;
+            }
+            out.push_str("\\quad ");
+            continue;
+        }
+        out.push(c);
+        i += 1;
+    }
+    out
 }
 
 fn derivation_mobject(d: &Derivation) -> Mobject {
@@ -515,4 +618,27 @@ fn place_board(s: &mut Scene, items: Vec<(f64, Mobject, bool)>, start: f64, dur:
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::plain_math_to_tex;
+
+    #[test]
+    fn plain_math_gets_upright_words() {
+        assert_eq!(
+            plain_math_to_tex("v_ground = v_relative + v_carrier  (vectors)"),
+            r"v_{\text{ground}} = v_{\text{relative}} + v_{\text{carrier}}\quad (\text{vectors})"
+        );
+        assert_eq!(
+            plain_math_to_tex("θ = 0  ⟹  |a_B| = 3a  (all along one line)"),
+            r"θ = 0\quad ⟹\quad |a_B| = 3a\quad (\text{all along one line})"
+        );
+        assert_eq!(plain_math_to_tex("v_B = v_A tan θ"), r"v_B = v_A \tan  θ");
+        assert_eq!(plain_math_to_tex(r"\frac{a}{b}"), r"\frac{a}{b}");
+        assert_eq!(
+            plain_math_to_tex("Example-8:  a_B = a_A/√3"),
+            r"\text{Example-8}:\quad a_B = a_A/√3"
+        );
+    }
 }
