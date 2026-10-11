@@ -170,6 +170,7 @@ add(sim.trace(0, 1));                 // phase portrait
 | Biology | Animal and plant cells, DNA helix, RNA, neuron with action potential, mitosis, virus, bacterium, membrane, enzymes, Punnett squares, population models, labelled diagrams. |
 | Question solving | `Problem` (given/find, steps that morph line to line, highlights, an auto-scrolling work area, a boxed answer, narration); quizzes; derivations; problem generators (quadratic, kinematics, Ohm's law, stoichiometry). |
 
+A compact list of every feature and script function for coding agents is in [AGENTS.md](AGENTS.md).
 For the full manim and Remotion mapping, see [docs/FEATURE_PARITY.md](docs/FEATURE_PARITY.md).
 For the architecture and phase plan, see [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md).
 
