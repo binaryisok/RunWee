@@ -132,7 +132,9 @@ fn trace(grid: &[f32], w: usize, h: usize) -> Vec<Vec<Vec2>> {
     }
     let mut loops = Vec::new();
     let mut seen = std::collections::HashSet::new();
-    let keys: Vec<usize> = next.keys().copied().collect();
+    // Sorted so the traced loops (and their start points) don't depend on hash order.
+    let mut keys: Vec<usize> = next.keys().copied().collect();
+    keys.sort_unstable();
     for start in keys {
         if seen.contains(&start) {
             continue;

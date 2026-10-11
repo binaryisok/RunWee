@@ -223,6 +223,92 @@ pub fn glyph_index(id: FontId, ch: char) -> Option<u16> {
     f.face.glyph_index(ch).map(|g| g.0).filter(|&g| g != 0)
 }
 
+/// Combining diacritics (accents and arrows drawn over the previous character).
+pub fn is_combining(c: char) -> bool {
+    matches!(c as u32, 0x0300..=0x036F | 0x1AB0..=0x1AFF | 0x20D0..=0x20FF)
+}
+
+/// The font to draw `c` with: `primary` when it has the glyph, otherwise the first
+/// bundled font that does (the KaTeX fonts cover most maths symbols Inter lacks).
+/// `None` when no font has it (e.g. emoji), so callers can skip it instead of
+/// drawing a missing-glyph box.
+pub fn font_for_char(primary: FontId, c: char) -> Option<FontId> {
+    if c.is_whitespace() || c.is_control() || glyph_index(primary, c).is_some() {
+        return Some(primary);
+    }
+    if matches!(c as u32, 0xFE00..=0xFE0F | 0x200B..=0x200D) {
+        return None;
+    }
+    [
+        find_font("KaTeX_Main", false, false),
+        find_font("KaTeX_AMS", false, false),
+        find_font("KaTeX_Math", false, true),
+        find_font("KaTeX_Size1", false, false),
+        find_font("Inter", false, false),
+    ]
+    .into_iter()
+    .find(|&f| glyph_index(f, c).is_some())
+}
+
+/// A positioned glyph of a laid-out line (em units, pen origin at 0, y up).
+#[derive(Clone, Copy, Debug)]
+pub struct LineGlyph {
+    pub font: FontId,
+    pub gid: u16,
+    pub x: f64,
+    pub y: f64,
+}
+
+/// Lay out one line with per-character font fallback ([`font_for_char`]);
+/// combining marks are centred over the preceding glyph. Returns the glyphs
+/// and the advance width (em).
+pub fn layout_line(primary: FontId, text: &str) -> (Vec<LineGlyph>, f64) {
+    let mut runs: Vec<(FontId, bool, String)> = vec![];
+    for c in text.chars() {
+        let Some(f) = font_for_char(primary, c) else {
+            continue;
+        };
+        let mark = is_combining(c);
+        match runs.last_mut() {
+            Some((rf, false, r)) if *rf == f && !mark => r.push(c),
+            _ => runs.push((f, mark, c.to_string())),
+        }
+    }
+    let bounds = |f: FontId, gid: u16| glyph_path(f, gid).bounds();
+    let mut out: Vec<LineGlyph> = vec![];
+    let mut last_base: Option<usize> = None;
+    let mut pen = 0.0;
+    for (f, mark, run) in runs {
+        let (glyphs, adv) = shape(f, &run);
+        let base = last_base.and_then(|i| bounds(out[i].font, out[i].gid).map(|b| (out[i], b)));
+        if let (true, Some((bg, b))) = (mark, base) {
+            for g in glyphs {
+                let Some(mb) = bounds(f, g.gid) else { continue };
+                out.push(LineGlyph {
+                    font: f,
+                    gid: g.gid,
+                    x: bg.x + (b.min.x + b.max.x - mb.min.x - mb.max.x) / 2.0,
+                    y: bg.y + b.max.y + 0.06 - mb.min.y,
+                });
+            }
+            continue;
+        }
+        for g in glyphs {
+            if !mark {
+                last_base = Some(out.len());
+            }
+            out.push(LineGlyph {
+                font: f,
+                gid: g.gid,
+                x: pen + g.x,
+                y: g.y,
+            });
+        }
+        pen += adv;
+    }
+    (out, pen)
+}
+
 /// Horizontal advance in em.
 pub fn advance(id: FontId, gid: u16) -> f64 {
     let f = font(id);
@@ -355,5 +441,28 @@ mod tests {
         assert!(glyph_index(math, 'α').is_some());
         let size4 = find_font("KaTeX_Size4", false, false);
         assert!(glyph_index(size4, '⎛').is_some());
+    }
+
+    #[test]
+    fn fallback_and_combining_marks() {
+        let inter = find_font("Inter", false, false);
+        // ⊥ is not in Inter but is in the maths fonts; emoji are in none.
+        assert_ne!(font_for_char(inter, '⊥'), Some(inter));
+        assert!(font_for_char(inter, '⊥').is_some());
+        assert!(font_for_char(inter, '\u{1F600}').is_none());
+        // v⃗: the arrow sits above the v and adds no width.
+        let (plain, w0) = layout_line(inter, "v");
+        let (g, w1) = layout_line(inter, "v\u{20D7}");
+        assert_eq!(plain.len(), 1);
+        assert_eq!(g.len(), 2);
+        assert!((w0 - w1).abs() < 1e-9);
+        let vb = glyph_path(g[0].font, g[0].gid).bounds().unwrap();
+        let ab = glyph_path(g[1].font, g[1].gid).bounds().unwrap();
+        assert!(g[1].y + ab.min.y > vb.max.y, "arrow above the letter");
+        let (vc, ac) = (
+            g[0].x + (vb.min.x + vb.max.x) / 2.0,
+            g[1].x + (ab.min.x + ab.max.x) / 2.0,
+        );
+        assert!((vc - ac).abs() < 1e-6, "centred: {vc} vs {ac}");
     }
 }

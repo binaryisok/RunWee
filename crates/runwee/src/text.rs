@@ -150,8 +150,9 @@ impl Text {
         struct Ch {
             c: char,
             color: Color,
-            font: FontId,
+            font: Option<FontId>,
             scale: f64,
+            mark: bool,
         }
         let full: String = self.spans.iter().map(|s| s.text.as_str()).collect();
         let mut chars: Vec<Ch> = Vec::new();
@@ -166,8 +167,10 @@ impl Text {
                 chars.push(Ch {
                     c,
                     color: sp.color.unwrap_or(self.color),
-                    font: id,
+                    // Per-character fallback so symbols the font lacks still draw.
+                    font: font_for_char(id, c),
                     scale: sp.scale,
+                    mark: is_combining(c),
                 });
             }
         }
@@ -190,6 +193,8 @@ impl Text {
                 }
             }
         }
+        // Characters no bundled font can draw are skipped.
+        chars.retain(|c| c.font.is_some());
         // Split into runs of equal (font, scale, color) per line, shape them.
         struct G {
             path: Option<std::sync::Arc<Path>>,
@@ -199,6 +204,7 @@ impl Text {
             color: Color,
             scale: f64,
             ch: char,
+            mark: bool,
         }
         let mut lines: Vec<Vec<G>> = vec![vec![]];
         let mut i = 0;
@@ -214,11 +220,13 @@ impl Text {
                 && chars[j].font == chars[i].font
                 && chars[j].scale == chars[i].scale
                 && chars[j].color == chars[i].color
+                && chars[j].mark == chars[i].mark
             {
                 j += 1;
             }
             let run: String = chars[i..j].iter().map(|c| c.c).collect();
-            let (glyphs, _) = shape(chars[i].font, &run);
+            let run_font = chars[i].font.unwrap_or(FontId(0));
+            let (glyphs, _) = shape(run_font, &run);
             // map byte cluster → char index
             let byte_to_char: Vec<usize> = {
                 let mut v = vec![0; run.len() + 1];
@@ -233,7 +241,7 @@ impl Text {
                 run_pen += g.advance;
                 let ci = i + byte_to_char[g.cluster.min(run.len())];
                 let ch = chars[ci].c;
-                let p = glyph_path(chars[i].font, g.gid);
+                let p = glyph_path(run_font, g.gid);
                 lines.last_mut().unwrap().push(G {
                     path: if p.is_empty() { None } else { Some(p) },
                     x: xoff,
@@ -242,9 +250,40 @@ impl Text {
                     color: chars[ci].color,
                     scale: chars[i].scale,
                     ch,
+                    mark: chars[i].mark,
                 });
             }
             i = j;
+        }
+        // Combining marks shaped on their own (from a fallback font): centre each
+        // over the previous glyph, just above it, taking no advance.
+        for line in &mut lines {
+            for k in 0..line.len() {
+                if !line[k].mark {
+                    continue;
+                }
+                let Some(mb) = line[k].path.as_ref().and_then(|p| p.bounds()) else {
+                    continue;
+                };
+                let prev = (0..k).rev().find(|&q| !line[q].mark);
+                let Some(pb) = prev.and_then(|q| {
+                    line[q]
+                        .path
+                        .as_ref()
+                        .and_then(|p| p.bounds())
+                        .map(|b| (q, b))
+                }) else {
+                    line[k].adv = 0.0;
+                    continue;
+                };
+                let (q, b) = pb;
+                // Pen positions between q and k (other marks have zero advance).
+                let back: f64 = line[q..k].iter().map(|g| g.adv).sum();
+                let cx = line[q].x + (b.min.x + b.max.x) / 2.0 - back;
+                line[k].x = cx - (mb.min.x + mb.max.x) / 2.0;
+                line[k].y = line[q].y + b.max.y + 0.06 - mb.min.y;
+                line[k].adv = 0.0;
+            }
         }
         // Word wrap
         if let Some(maxw) = self.max_width {
