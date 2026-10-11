@@ -478,15 +478,34 @@ fn plain_math_to_tex(src: &str) -> String {
     const FUNCS: [&str; 12] = [
         "sin", "cos", "tan", "sec", "csc", "cot", "ln", "log", "exp", "max", "min", "lim",
     ];
-    if src.contains('\\') || src.contains('{') {
+    if src.contains('{') {
         return src.to_string();
     }
     let chars: Vec<char> = src.chars().collect();
-    let is_word = |w: &str| w.chars().count() >= 2 && !FUNCS.contains(&w);
+    // Two-letter runs are usually products (mg, ma); only common words count.
+    const SHORT: [&str; 18] = [
+        "if", "of", "by", "in", "on", "at", "to", "or", "up", "is", "as", "be", "no", "so", "we",
+        "it", "an", "do",
+    ];
+    let is_word = |w: &str| {
+        let n = w.chars().count();
+        (n >= 3 || n == 2 && SHORT.contains(&w.to_ascii_lowercase().as_str()))
+            && !FUNCS.contains(&w)
+    };
     let mut out = String::new();
     let mut i = 0;
     while i < chars.len() {
         let c = chars[i];
+        // TeX commands (\mu, \cdot, \,) pass through untouched.
+        if c == '\\' {
+            out.push(c);
+            i += 1;
+            while i < chars.len() && chars[i].is_ascii_alphabetic() {
+                out.push(chars[i]);
+                i += 1;
+            }
+            continue;
+        }
         if c.is_ascii_alphabetic() {
             let mut j = i;
             while j < chars.len() && chars[j].is_ascii_alphabetic() {
@@ -500,7 +519,8 @@ fn plain_math_to_tex(src: &str) -> String {
                 i = j;
                 continue;
             }
-            if !glued && is_word(&word) {
+            let scripted = matches!(chars.get(j), Some('_' | '^'));
+            if !glued && !scripted && is_word(&word) {
                 // Extend over following words separated by single spaces.
                 let mut end = j;
                 let mut phrase = word.clone();
@@ -538,7 +558,21 @@ fn plain_math_to_tex(src: &str) -> String {
                         break;
                     }
                 }
-                out.push_str(&format!("\\text{{{phrase}}}"));
+                // Spaces next to the phrase are kept inside \text (math mode drops them).
+                let lead = if i > 0 && chars[i - 1] == ' ' && !out.trim().is_empty() {
+                    " "
+                } else {
+                    ""
+                };
+                let trail = if chars.get(end) == Some(&' ')
+                    && chars.get(end + 1) != Some(&' ')
+                    && end + 1 < chars.len()
+                {
+                    " "
+                } else {
+                    ""
+                };
+                out.push_str(&format!("\\text{{{lead}{phrase}{trail}}}"));
                 i = end;
                 continue;
             }
@@ -636,6 +670,14 @@ mod tests {
         );
         assert_eq!(plain_math_to_tex("v_B = v_A tan θ"), r"v_B = v_A \tan  θ");
         assert_eq!(plain_math_to_tex(r"\frac{a}{b}"), r"\frac{a}{b}");
+        assert_eq!(
+            plain_math_to_tex("accelerating up: N = m(g + a), ma_x = mg"),
+            r"\text{accelerating up}: N = m(g + a), ma_x = mg"
+        );
+        assert_eq!(
+            plain_math_to_tex(r"Motion starts only if m_2 g > \mu m_1 g"),
+            r"\text{Motion starts only if } m_2 g > \mu m_1 g"
+        );
         assert_eq!(
             plain_math_to_tex("Example-8:  a_B = a_A/√3"),
             r"\text{Example-8}:\quad a_B = a_A/√3"
