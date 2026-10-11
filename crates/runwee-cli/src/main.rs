@@ -423,6 +423,23 @@ mod tests {
     use super::*;
 
     #[test]
+    fn script_ode_solver() {
+        let (engine, _) = script::test_engine();
+        // x'' = -x from x = 1: x(pi) = -1, and the state array round-trips.
+        let x: f64 = engine
+            .eval("let tr = ode(|t, y| [y[1], -y[0]], [1.0, 0.0], 3.2, 0.001); tr.state(3.141592653589793)[0]")
+            .unwrap();
+        assert!((x + 1.0).abs() < 1e-4, "{x}");
+        let lo: f64 = engine
+            .eval("ode(|t, y| [y[1], -y[0]], [1.0, 0.0], 7.0).min(0)")
+            .unwrap();
+        assert!((lo + 1.0).abs() < 1e-3, "{lo}");
+        assert!(engine
+            .eval::<f64>("ode(|t, y| [y[0]], [1.0, 0.0], 1.0).duration()")
+            .is_err());
+    }
+
+    #[test]
     fn example_scripts_compile() {
         let (engine, _) = script::test_engine();
         let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/scripts");

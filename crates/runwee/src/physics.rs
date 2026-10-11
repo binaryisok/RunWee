@@ -176,6 +176,66 @@ pub fn atwood_machine(axle: Vec2, r: f64, h1: f64, h2: f64, c1: Color, c2: Color
     Mobject::group([rope, wheel, m1.with_tag("m1"), m2.with_tag("m2")])
 }
 
+/// A pulley wheel with axle and rim (no mount).
+pub fn pulley(center: Vec2, r: f64, color: Color) -> Mobject {
+    Mobject::group([
+        circle_at(center, r)
+            .fill(color, 0.85)
+            .stroke(color.lighter(0.35), 3.0),
+        circle_at(center, r * 0.55).stroke(color.lighter(0.2), 2.0),
+        dot_r(center, (r * 0.18).max(0.04), WHITE),
+    ])
+}
+
+/// A pulley hung from a ceiling at `ceiling_y` by a short rod.
+pub fn fixed_pulley(center: Vec2, r: f64, ceiling_y: f64, color: Color) -> Mobject {
+    let top = v2(center.x, ceiling_y);
+    Mobject::group([
+        hatched_surface(top + LEFT * (r + 0.5), top + RIGHT * (r + 0.5), UP),
+        line(top, center).stroke(GRAY_B, 4.0),
+        pulley(center, r, color),
+    ])
+}
+
+/// Tangent points from `p` to the circle `(c, r)`; `None` when `p` is inside.
+fn tangent_angles(p: Vec2, c: Vec2, r: f64) -> Option<(f64, f64)> {
+    let d = p - c;
+    let len = d.length();
+    if len <= r {
+        return None;
+    }
+    let base = d.y.atan2(d.x);
+    let a = (r / len).acos();
+    Some((base + a, base - a))
+}
+
+/// A rope from `a`, wrapped around the pulley `(c, r)`, to `b`. `over` picks the
+/// upper wrap (string over the pulley) or the lower one (pulley riding on the string).
+pub fn rope_over_pulley(a: Vec2, c: Vec2, r: f64, b: Vec2, over: bool, color: Color) -> Mobject {
+    let (Some(ta), Some(tb)) = (tangent_angles(a, c, r), tangent_angles(b, c, r)) else {
+        return polyline(&[a, b]).stroke(color, 3.0);
+    };
+    let side = if over { 1.0 } else { -1.0 };
+    let pick = |(t1, t2): (f64, f64)| {
+        if t1.sin() * side >= t2.sin() * side {
+            t1
+        } else {
+            t2
+        }
+    };
+    let (ta, tb) = (pick(ta), pick(tb));
+    let ccw = (tb - ta).rem_euclid(TAU);
+    let cw = ccw - TAU;
+    let sweep = if (ta + ccw / 2.0).sin() * side >= (ta + cw / 2.0).sin() * side {
+        ccw
+    } else {
+        cw
+    };
+    let pa = c + Vec2::from_angle(ta) * r;
+    let pb = c + Vec2::from_angle(tb) * r;
+    Mobject::group([line(a, pa), arc_centered(c, r, ta, sweep), line(pb, b)]).stroke(color, 3.0)
+}
+
 /// Dashed parabolic path of an ideal projectile, plus ground line.
 pub fn projectile_path(p0: Vec2, speed: f64, angle: f64, g: f64, color: Color) -> Mobject {
     let (tof, _, _) = crate::sim::projectile_stats(speed, angle, g);
@@ -815,6 +875,8 @@ mod tests {
             incline(v2(-3.0, -2.0), 5.0, 0.5, GRAY),
             block_on_incline(v2(-3.0, -2.0), 0.5, 2.0, 0.6, BLUE),
             free_body_diagram(o, 1.0, &[(UP * 1.5, "N", GREEN), (DOWN * 1.5, "mg", RED)]),
+            fixed_pulley(o, 0.5, 2.0, GRAY),
+            rope_over_pulley(v2(-1.0, -2.0), o, 0.5, v2(1.0, -2.0), true, GOLD),
             atwood_machine(UP, 0.5, 2.0, 1.0, RED, BLUE),
             projectile_path(v2(-5.0, -2.0), 8.0, 0.8, 9.81, YELLOW),
             vector_components(o, v2(2.0, 1.5), YELLOW, ("v", "v_x", "v_y")),
@@ -858,5 +920,20 @@ mod tests {
         assert_eq!(eq.children.len(), 2);
         let lp = circuit_loop(&[v2(-2.0, -1.0), v2(2.0, -1.0), v2(2.0, 1.0), v2(-2.0, 1.0)]);
         assert!(current_dots(&lp, 0.5, 1.0, 0.5, YELLOW).children.len() >= 20);
+    }
+
+    #[test]
+    fn rope_wraps_over_top() {
+        let rope = rope_over_pulley(v2(-0.5, -3.0), Vec2::ZERO, 0.5, v2(0.5, -3.0), true, GOLD);
+        let r = rope.bounds().unwrap();
+        let (lo, hi) = (r.min, r.max);
+        assert!(
+            (hi.y - 0.5).abs() < 0.02,
+            "rope should pass over the top: {hi:?}"
+        );
+        assert!(lo.y < -2.9);
+        let under = rope_over_pulley(v2(-0.5, 3.0), Vec2::ZERO, 0.5, v2(0.5, 3.0), false, GOLD);
+        let lo = under.bounds().unwrap().min;
+        assert!((lo.y + 0.5).abs() < 0.02, "rope should pass under: {lo:?}");
     }
 }

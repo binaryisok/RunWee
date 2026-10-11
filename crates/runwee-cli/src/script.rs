@@ -2066,6 +2066,200 @@ fn register_3d_and_stem(engine: &mut Engine) {
         phys::wire_magnetic_field(p, out, 4, BLUE)
     });
     engine.register_fn("bar_magnet", |p: Vec2, len: N| phys::bar_magnet(p, f(&len)));
+    // general ODE solver: dy/dt = f(t, y) with y an array of numbers
+    fn ode_solve(
+        ctx: &NativeCallContext,
+        fp: &FnPtr,
+        y0: &Array,
+        t_end: f64,
+        dt: f64,
+    ) -> R<sim::Trajectory> {
+        if !(dt > 0.0 && t_end >= 0.0) || t_end / dt > 2.0e6 {
+            return Err("ode: need dt > 0, t_end >= 0 and at most 2e6 steps".into());
+        }
+        let err = std::cell::RefCell::new(None);
+        let n = y0.len();
+        let tr = sim::rk4(
+            |t, y| {
+                if err.borrow().is_some() {
+                    return vec![0.0; n];
+                }
+                let arr: Array = y.iter().map(|v| Dynamic::from_float(*v)).collect();
+                match fp.call_within_context::<Array>(ctx, (t, arr)) {
+                    Ok(d) if d.len() == n => floats(&d),
+                    Ok(d) => {
+                        *err.borrow_mut() = Some(format!(
+                            "ode: derivative returned {} values for a {n}-value state",
+                            d.len()
+                        ));
+                        vec![0.0; n]
+                    }
+                    Err(e) => {
+                        *err.borrow_mut() = Some(format!("ode: {e}"));
+                        vec![0.0; n]
+                    }
+                }
+            },
+            &floats(y0),
+            t_end,
+            dt,
+        );
+        match err.into_inner() {
+            Some(e) => Err(e.into()),
+            None => Ok(tr),
+        }
+    }
+    engine.register_fn(
+        "ode",
+        |ctx: NativeCallContext, fp: FnPtr, y0: Array, t_end: N, dt: N| {
+            ode_solve(&ctx, &fp, &y0, f(&t_end), f(&dt))
+        },
+    );
+    engine.register_fn(
+        "ode",
+        |ctx: NativeCallContext, fp: FnPtr, y0: Array, t_end: N| {
+            ode_solve(&ctx, &fp, &y0, f(&t_end), 1.0 / 240.0)
+        },
+    );
+    engine.register_fn("state", |tr: &mut sim::Trajectory, t: N| -> Array {
+        tr.at(f(&t)).into_iter().map(Dynamic::from_float).collect()
+    });
+    engine.register_get("duration", |tr: &mut sim::Trajectory| tr.duration());
+    engine.register_fn("duration", |tr: &mut sim::Trajectory| tr.duration());
+    engine.register_fn("max", |tr: &mut sim::Trajectory, k: N| {
+        let k = f(&k) as usize;
+        tr.states
+            .iter()
+            .filter_map(|s| s.get(k))
+            .fold(f64::NEG_INFINITY, |a, b| a.max(*b))
+    });
+    engine.register_fn("min", |tr: &mut sim::Trajectory, k: N| {
+        let k = f(&k) as usize;
+        tr.states
+            .iter()
+            .filter_map(|s| s.get(k))
+            .fold(f64::INFINITY, |a, b| a.min(*b))
+    });
+    fn trace(tr: &sim::Trajectory, kx: usize, ky: usize, t0: f64, t1: f64) -> Mobject {
+        let n = 400;
+        let pts: Vec<Vec2> = (0..=n)
+            .map(|i| {
+                let s = tr.at(t0 + (t1 - t0) * i as f64 / n as f64);
+                v2(
+                    s.get(kx).copied().unwrap_or(0.0),
+                    s.get(ky).copied().unwrap_or(0.0),
+                )
+            })
+            .collect();
+        polyline(&pts)
+    }
+    // Path through state space: (state[kx], state[ky]) over [t0, t1].
+    engine.register_fn("trace", |tr: &mut sim::Trajectory, kx: N, ky: N| {
+        let d = tr.duration();
+        trace(tr, f(&kx) as usize, f(&ky) as usize, 0.0, d)
+    });
+    engine.register_fn(
+        "trace",
+        |tr: &mut sim::Trajectory, kx: N, ky: N, t0: N, t1: N| {
+            trace(tr, f(&kx) as usize, f(&ky) as usize, f(&t0), f(&t1))
+        },
+    );
+    // ready-made systems
+    engine.register_fn(
+        "double_pendulum_sim",
+        |l1: N, l2: N, th1: N, th2: N, g: N, dur: N| {
+            sim::double_pendulum(f(&l1), f(&l2), 1.0, 1.0, f(&th1), f(&th2), f(&g), f(&dur))
+        },
+    );
+    engine.register_fn(
+        "driven_oscillator_sim",
+        |k: N, m: N, c: N, force: N, omega: N, dur: N| {
+            sim::driven_oscillator(f(&k), f(&m), f(&c), f(&force), f(&omega), f(&dur))
+        },
+    );
+    engine.register_fn(
+        "projectile_drag_sim",
+        |p0: Vec2, v: N, ang: N, g: N, drag: N, dur: N| {
+            sim::projectile_drag(p0, f(&v), f(&ang), f(&g), f(&drag), f(&dur))
+        },
+    );
+    engine.register_fn("projectile_stats", |v: N, ang: N, g: N| -> Map {
+        let (tof, range, height) = sim::projectile_stats(f(&v), f(&ang), f(&g));
+        let mut m = Map::new();
+        m.insert("time".into(), Dynamic::from_float(tof));
+        m.insert("range".into(), Dynamic::from_float(range));
+        m.insert("height".into(), Dynamic::from_float(height));
+        m
+    });
+    // bodies: [[mass, [x, y], [vx, vy]], ...]
+    engine.register_fn("n_body_sim", |bodies: Array, g: N, dur: N| {
+        let bs: Vec<(f64, Vec2, Vec2)> = bodies
+            .iter()
+            .filter_map(|b| b.clone().try_cast::<Array>())
+            .filter(|b| b.len() >= 3)
+            .map(|b| (f(&b[0]), vec_of(&b[1]), vec_of(&b[2])))
+            .collect();
+        sim::n_body(&bs, f(&g), 0.05, f(&dur), 1.0 / 600.0)
+    });
+    engine.register_fn("body_pos", |tr: &mut sim::Trajectory, i: N, t: N| {
+        sim::body_pos(tr, f(&i) as usize, f(&t))
+    });
+    // more mechanics / optics / circuit / field helpers
+    engine.register_fn("hatched_surface", |a: Vec2, b: Vec2, normal: Vec2| {
+        phys::hatched_surface(a, b, normal)
+    });
+    engine.register_fn("hanging_spring", |top: Vec2, y_mass: N, c: N| {
+        phys::hanging_spring(top, f(&y_mass), 0.7, col(&c))
+    });
+    engine.register_fn("atwood", |axle: Vec2, r: N, h1: N, h2: N, c1: N, c2: N| {
+        phys::atwood_machine(axle, f(&r), f(&h1), f(&h2), col(&c1), col(&c2))
+    });
+    engine.register_fn("incline_point", |o: Vec2, ang: N, s: N, lift: N| {
+        phys::incline_point(o, f(&ang), f(&s), f(&lift))
+    });
+    engine.register_fn("pulley", |c: Vec2, r: N, colr: N| {
+        phys::pulley(c, f(&r), col(&colr))
+    });
+    engine.register_fn("fixed_pulley", |c: Vec2, r: N, ceiling: N, colr: N| {
+        phys::fixed_pulley(c, f(&r), f(&ceiling), col(&colr))
+    });
+    engine.register_fn(
+        "rope_over_pulley",
+        |a: Vec2, c: Vec2, r: N, b: Vec2, over: bool, colr: N| {
+            phys::rope_over_pulley(a, c, f(&r), b, over, col(&colr))
+        },
+    );
+    engine.register_fn(
+        "wave_fn",
+        |ctx: NativeCallContext, fp: FnPtr, x0: N, x1: N, t: N, c: N| {
+            phys::wave_fn(
+                |x, t| fp.call_within_context::<f64>(&ctx, (x, t)).unwrap_or(0.0),
+                f(&x0),
+                f(&x1),
+                f(&t),
+                col(&c),
+            )
+        },
+    );
+    engine.register_fn("lens", |c: Vec2, h: N, converging: bool| {
+        phys::lens(c, f(&h), converging)
+    });
+    engine.register_fn("curved_mirror", |v: Vec2, r: N, h: N, concave: bool| {
+        phys::curved_mirror(v, f(&r), f(&h), concave)
+    });
+    engine.register_fn("thin_lens", |focal: N, d_o: N| -> Array {
+        let (d_i, m) = phys::thin_lens(f(&focal), f(&d_o));
+        vec![Dynamic::from_float(d_i), Dynamic::from_float(m)]
+    });
+    engine.register_fn("ac_source", |a: Vec2, b: Vec2| phys::ac_source(a, b));
+    engine.register_fn("ground", |p: Vec2| phys::ground(p));
+    engine.register_fn("junction", |p: Vec2| phys::junction(p));
+    engine.register_fn("e_field", |charges: Array, p: Vec2| {
+        phys::e_field(&charges_of(&charges), p)
+    });
+    engine.register_fn("e_potential", |charges: Array, p: Vec2| {
+        phys::e_potential(&charges_of(&charges), p)
+    });
     // chemistry
     engine.register_fn("periodic_table", |cell: N| chem::periodic_table(f(&cell)));
     engine.register_fn("element_tile", |z: N, size: N| {
