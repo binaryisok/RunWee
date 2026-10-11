@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/runwee", "crates/runwee-cli"]
+members = ["crates/runwee", "crates/runwee-cli", "crates/runwee-lesson"]
 
 [workspace.package]
 version = "0.1.0"

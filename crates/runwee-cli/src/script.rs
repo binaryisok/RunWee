@@ -745,6 +745,7 @@ fn register_canvas(engine: &mut Engine) {
     engine.register_fn("fill", |c: &mut C| c.fill());
     engine.register_fn("fill", |c: &mut C, rule: &str| c.fill_rule(rule));
     engine.register_fn("stroke", |c: &mut C| c.stroke());
+    engine.register_fn("clip", |c: &mut C| c.clip());
     engine.register_fn("fill_rect", |c: &mut C, x: N, y: N, w: N, h: N| {
         c.fill_rect(f(&x), f(&y), f(&w), f(&h))
     });

@@ -239,6 +239,8 @@ pub struct Style {
     /// Whole-object opacity multiplier (used by fades).
     pub opacity: f32,
     pub blend: Blend,
+    /// Only paint inside this axis-aligned scene rectangle (min, max).
+    pub clip: Option<(Vec2, Vec2)>,
 }
 
 pub const DEFAULT_STROKE_WIDTH: f32 = 4.0;
@@ -262,6 +264,7 @@ impl Default for Style {
             glow_color: None,
             glow_strength: 1.0,
             shadow: None,
+            clip: None,
             opacity: 1.0,
             blend: Blend::Normal,
         }
@@ -298,6 +301,21 @@ impl Style {
     pub fn transform(&mut self, a: &Affine) {
         self.fill.transform(a);
         self.stroke.transform(a);
+        if let Some((lo, hi)) = self.clip {
+            let pts = [
+                a.apply(lo),
+                a.apply(hi),
+                a.apply(v2(lo.x, hi.y)),
+                a.apply(v2(hi.x, lo.y)),
+            ];
+            let mn = pts
+                .iter()
+                .fold(pts[0], |m, p| v2(m.x.min(p.x), m.y.min(p.y)));
+            let mx = pts
+                .iter()
+                .fold(pts[0], |m, p| v2(m.x.max(p.x), m.y.max(p.y)));
+            self.clip = Some((mn, mx));
+        }
     }
     pub fn lerp(&self, o: &Style, t: f64) -> Style {
         let f = |a: f32, b: f32| lerp_f32(a, b, t);
@@ -353,6 +371,7 @@ impl Style {
             },
             opacity: f(self.opacity, o.opacity),
             blend: if t < 0.5 { self.blend } else { o.blend },
+            clip: if t < 0.5 { self.clip } else { o.clip },
         }
     }
 }

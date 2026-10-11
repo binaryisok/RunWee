@@ -1,0 +1,13 @@
+[package]
+name = "runwee-lesson"
+description = "Render anims_bms-style JavaScript lessons (canvas simulations + narrated timelines) as RunWee videos"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+runwee = { path = "../runwee" }
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rquickjs = { version = "0.14", features = ["loader"] }

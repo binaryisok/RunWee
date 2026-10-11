@@ -11,6 +11,7 @@ path = "src/main.rs"
 
 [dependencies]
 runwee = { path = "../runwee" }
+runwee-lesson = { path = "../runwee-lesson" }
 anyhow = "1"
 rhai = { version = "1.26", features = ["sync", "metadata"] }
 serde_json = "1"

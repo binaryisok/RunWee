@@ -18,6 +18,8 @@ RunWee — fast STEM animation engine
 
 USAGE:
     runwee render <script.rhai> [options]   Render a scene script
+    runwee lesson <dir> [options]           Render an anims_bms JavaScript lesson (index.js)
+                                            --part intro|lecture|all, --limit N, --info
     runwee new <script.rhai>                Write a starter script
     runwee info                             Show encoder / feature info
     runwee api                              List every script function
@@ -69,6 +71,9 @@ struct Args {
     captions: bool,
     theme: Option<String>,
     background: Option<String>,
+    part: Option<String>,
+    limit: Option<usize>,
+    info: bool,
 }
 
 fn parse_args() -> Result<Args> {
@@ -88,6 +93,9 @@ fn parse_args() -> Result<Args> {
         captions: true,
         theme: None,
         background: None,
+        part: None,
+        limit: None,
+        info: false,
     };
     let mut i = 0;
     let value = |i: &mut usize, flag: &str| -> Result<String> {
@@ -115,6 +123,9 @@ fn parse_args() -> Result<Args> {
             "--transparent" => a.transparent = true,
             "--no-audio" => a.audio = false,
             "--no-captions" => a.captions = false,
+            "--part" => a.part = Some(value(&mut i, &arg)?),
+            "--limit" => a.limit = Some(num(value(&mut i, &arg)?, &arg)? as usize),
+            "--info" => a.info = true,
             "-h" | "--help" => a.cmd = "help".into(),
             s if s.starts_with('-') => bail!("unknown option {s}\n\n{USAGE}"),
             s if a.cmd.is_empty() => a.cmd = s.to_string(),
@@ -136,6 +147,110 @@ fn props_map(json: Option<&str>) -> Result<rhai::Map> {
     }
     let d: rhai::Dynamic = rhai::serde::to_dynamic(&v).map_err(|e| anyhow::anyhow!("{e}"))?;
     Ok(d.cast::<rhai::Map>())
+}
+
+/// `runwee lesson <topic-dir>`: render an anims_bms JavaScript lesson as a video.
+fn lesson_cmd(a: &Args) -> Result<()> {
+    let dir = a
+        .file
+        .as_ref()
+        .context("lesson: missing <lesson folder or index.js>")?;
+    if a.info {
+        let info = runwee_lesson::inspect(dir)?;
+        println!("{} — {}", info.title, info.subtitle);
+        println!(
+            "presets: {}",
+            info.presets
+                .iter()
+                .map(|p| p.id.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+        println!(
+            "intro steps: {}, lecture steps: {}",
+            info.intro.len(),
+            info.lecture.len()
+        );
+        let words: usize = info
+            .intro
+            .iter()
+            .chain(&info.lecture)
+            .map(|s| s.text.split_whitespace().count())
+            .sum();
+        println!(
+            "narration: {words} words (≈ {:.1} min)",
+            words as f64 / 155.0
+        );
+        return Ok(());
+    }
+    let q = match a.quality.as_deref() {
+        Some(s) => Quality::parse(s).with_context(|| format!("unknown quality '{s}'"))?,
+        None => Quality::TwoK,
+    };
+    let cfg = q.config();
+    let mut opts = runwee_lesson::LessonOptions::new(dir, cfg.fps);
+    if let Some(p) = &a.part {
+        opts.parts = runwee_lesson::Parts::parse(p)
+            .with_context(|| format!("--part must be intro, lecture or all (got '{p}')"))?;
+    }
+    opts.limit_steps = a.limit;
+    let started = std::time::Instant::now();
+    let mut scene = runwee_lesson::build(&opts)?;
+    eprintln!("lesson prepared in {:.1}s", started.elapsed().as_secs_f64());
+    if let Some(name) = &a.theme {
+        let th = Theme::preset(name).with_context(|| format!("unknown theme '{name}'"))?;
+        scene.base_theme(th);
+    }
+    let stem = {
+        let p = std::fs::canonicalize(dir).unwrap_or_else(|_| dir.clone());
+        let p = if p.file_name().is_some_and(|f| f == "index.js") {
+            p.parent().map(|x| x.to_path_buf()).unwrap_or(p)
+        } else {
+            p
+        };
+        p.file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("lesson")
+            .to_string()
+    };
+    if let Some(t) = a.still {
+        let p = a
+            .output
+            .clone()
+            .unwrap_or_else(|| format!("media/{stem}.png"));
+        if let Some(d) = Path::new(&p).parent() {
+            if !d.as_os_str().is_empty() {
+                std::fs::create_dir_all(d)?;
+            }
+        }
+        render_still(&scene, t, cfg, &p)?;
+        eprintln!("wrote {p}");
+        return Ok(());
+    }
+    let p = a
+        .output
+        .clone()
+        .unwrap_or_else(|| format!("media/{stem}.mp4"));
+    eprintln!(
+        "RunWee lesson: {} → {} ({}x{} @ {} fps, {:.1}s)",
+        dir.display(),
+        p,
+        cfg.width,
+        cfg.height,
+        cfg.fps,
+        scene.duration()
+    );
+    let mut ro = RenderOptions::new(&p, cfg);
+    ro.start = a.from;
+    ro.end = a.to;
+    ro.audio = a.audio;
+    ro.subtitles = a.captions;
+    let stats = render(&scene, &ro)?;
+    eprintln!(
+        "done: {} frames in {:.2}s ({:.1} fps)",
+        stats.frames, stats.seconds, stats.fps
+    );
+    Ok(())
 }
 
 fn render_cmd(a: &Args) -> Result<()> {
@@ -268,6 +383,7 @@ fn main() -> Result<()> {
     let a = parse_args()?;
     match a.cmd.as_str() {
         "render" => render_cmd(&a),
+        "lesson" => lesson_cmd(&a),
         "new" => {
             let p = a
                 .file

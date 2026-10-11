@@ -22,7 +22,7 @@
 //! ```
 
 use crate::color::*;
-use crate::fonts::{find_font, glyph_path, line_metrics, shape, FontId};
+use crate::fonts::{find_font, glyph_index, glyph_path, line_metrics, shape, FontId};
 use crate::math::*;
 use crate::mobject::Mobject;
 use crate::path::{Path, Rect};
@@ -99,6 +99,8 @@ struct State {
     baseline: TextBaseline,
     shadow_color: Color,
     shadow_blur: f64,
+    /// Extra clip from `clip()` (scene rect), on top of the canvas bounds.
+    clip: Option<(Vec2, Vec2)>,
 }
 
 impl Default for State {
@@ -122,6 +124,7 @@ impl Default for State {
             baseline: TextBaseline::Alphabetic,
             shadow_color: Color::TRANSPARENT,
             shadow_blur: 0.0,
+            clip: None,
         }
     }
 }
@@ -135,6 +138,8 @@ pub struct Canvas2D {
     map: Affine,
     /// Scene units per canvas pixel.
     unit: f64,
+    /// The canvas area in the scene; painting is clipped to it.
+    bounds: (Vec2, Vec2),
     state: State,
     stack: Vec<State>,
     /// Current path, in canvas pixels (the CTM is applied as commands arrive).
@@ -158,6 +163,7 @@ impl Canvas2D {
             height,
             map,
             unit: s,
+            bounds: (map.apply(v2(0.0, height)), map.apply(v2(width, 0.0))),
             state: State::default(),
             stack: vec![],
             path: Path::new(),
@@ -571,10 +577,35 @@ impl Canvas2D {
         st
     }
 
-    fn emit(&mut self, path: Path, style: Style) {
+    /// Clip later painting to the current path (its bounding box — exact for
+    /// rectangles, which is how canvas lessons use it).
+    pub fn clip(&mut self) {
+        let mut p = self.path.clone();
+        p.transform(&self.map);
+        if let Some(b) = p.bounds() {
+            let r = (b.min, b.max);
+            self.state.clip = Some(match self.state.clip {
+                Some(c) => (
+                    v2(c.0.x.max(r.0.x), c.0.y.max(r.0.y)),
+                    v2(c.1.x.min(r.1.x), c.1.y.min(r.1.y)),
+                ),
+                None => r,
+            });
+        }
+    }
+
+    fn emit(&mut self, path: Path, mut style: Style) {
         if path.is_empty() {
             return;
         }
+        let (lo, hi) = self.bounds;
+        style.clip = Some(match self.state.clip {
+            Some(c) => (
+                v2(lo.x.max(c.0.x), lo.y.max(c.0.y)),
+                v2(hi.x.min(c.1.x), hi.y.min(c.1.y)),
+            ),
+            None => (lo, hi),
+        });
         let mut p = path;
         p.transform(&self.map);
         self.out.push(Mobject::from_path_styled(p, style));
@@ -661,15 +692,18 @@ impl Canvas2D {
 
     /// `measureText(text).width` in user units.
     pub fn measure_text(&self, text: &str) -> f64 {
-        let (_, adv) = shape(self.font_id(), text);
-        adv * self.state.font_px
+        font_runs(self.font_id(), text)
+            .iter()
+            .map(|(id, run)| shape(*id, run).1)
+            .sum::<f64>()
+            * self.state.font_px
     }
 
     fn text_path(&self, text: &str, x: f64, y: f64) -> Path {
         let id = self.font_id();
         let size = self.state.font_px;
-        let (glyphs, adv) = shape(id, text);
-        let width = adv * size;
+        let runs = font_runs(id, text);
+        let width: f64 = runs.iter().map(|(f, r)| shape(*f, r).1).sum::<f64>() * size;
         let (asc, desc) = line_metrics(id);
         let x0 = match self.state.align {
             TextAlign::Left => x,
@@ -683,26 +717,29 @@ impl Canvas2D {
             TextBaseline::Bottom => y - desc * size,
         };
         let mut out = Path::new();
-        for g in glyphs {
-            let gp = glyph_path(id, g.gid);
-            if gp.is_empty() {
-                continue;
+        let mut pen = x0;
+        for (fid, run) in runs {
+            let (glyphs, adv) = shape(fid, &run);
+            for g in glyphs {
+                let gp = glyph_path(fid, g.gid);
+                if g.gid == 0 || gp.is_empty() {
+                    continue;
+                }
+                // Glyph outlines are in em units with y up.
+                let to_user = Affine {
+                    a: size,
+                    b: 0.0,
+                    c: 0.0,
+                    d: -size,
+                    e: pen + g.x * size,
+                    f: base - g.y * size,
+                };
+                let m = self.state.ctm.then_after(to_user);
+                let mut p = (*gp).clone();
+                p.transform(&m);
+                out.subpaths.extend(p.subpaths);
             }
-            // Glyph outlines are in em units with y up.
-            let gx = x0 + g.x * size;
-            let gy = base - g.y * size;
-            let to_user = Affine {
-                a: size,
-                b: 0.0,
-                c: 0.0,
-                d: -size,
-                e: gx,
-                f: gy,
-            };
-            let m = self.state.ctm.then_after(to_user);
-            let mut p = (*gp).clone();
-            p.transform(&m);
-            out.subpaths.extend(p.subpaths);
+            pen += adv * size;
         }
         out
     }
@@ -732,6 +769,47 @@ impl Canvas2D {
     pub fn fill_color(&self) -> Color {
         self.state.fill.first_color()
     }
+}
+
+/// Split `text` into runs by font: the primary font where it has the glyph, then
+/// the bundled math/symbol fonts. Characters no font has are dropped (instead of
+/// drawing a "missing glyph" box); combining marks stay with their base run.
+fn font_runs(primary: FontId, text: &str) -> Vec<(FontId, String)> {
+    let fallbacks = [
+        find_font("KaTeX_Main", false, false),
+        find_font("KaTeX_AMS", false, false),
+        find_font("KaTeX_Math", false, true),
+        find_font("KaTeX_Size1", false, false),
+    ];
+    let has = |id: FontId, c: char| glyph_index(id, c).is_some_and(|g| g != 0);
+    let mut runs: Vec<(FontId, String)> = vec![];
+    for c in text.chars() {
+        let combining = matches!(c as u32, 0x0300..=0x036F | 0x20D0..=0x20FF | 0xFE0F);
+        let id = if c.is_whitespace() || has(primary, c) {
+            Some(primary)
+        } else if combining {
+            runs.last().map(|r| r.0).filter(|&f| has(f, c))
+        } else {
+            fallbacks.iter().copied().find(|&f| has(f, c))
+        };
+        let Some(id) = id else { continue };
+        match runs.last_mut() {
+            Some((f, r)) if *f == id => r.push(c),
+            _ => runs.push((id, c.to_string())),
+        }
+    }
+    runs
+}
+
+/// Width of `text` in pixels for a CSS font (same fonts and fallbacks as painting).
+pub fn text_width(font: &str, text: &str) -> f64 {
+    let (px, bold, italic, family) = parse_font(font);
+    let id = find_font(&family, bold, italic);
+    font_runs(id, text)
+        .iter()
+        .map(|(f, r)| shape(*f, r).1)
+        .sum::<f64>()
+        * px
 }
 
 /// Signed sweep for canvas `arc`/`ellipse` (angles clockwise on screen).

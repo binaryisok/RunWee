@@ -150,6 +150,8 @@ pub struct Canvas<'a> {
     pub camera: Camera,
     xf: Affine,
     stroke_scale: f64,
+    /// Clip masks by pixel rectangle (built once per frame and reused).
+    masks: std::collections::HashMap<[i64; 4], sk::Mask>,
 }
 
 impl<'a> Canvas<'a> {
@@ -163,6 +165,7 @@ impl<'a> Canvas<'a> {
             camera,
             xf,
             stroke_scale,
+            masks: Default::default(),
         }
     }
 
@@ -356,6 +359,46 @@ impl<'a> Canvas<'a> {
         if !screen.intersects(&pb) {
             return;
         }
+        let clip_key = match st.clip {
+            Some((lo, hi)) => {
+                let a = self.xf.apply(lo);
+                let b = self.xf.apply(hi);
+                let r = Rect::new(
+                    v2(a.x.min(b.x), a.y.min(b.y)),
+                    v2(a.x.max(b.x), a.y.max(b.y)),
+                );
+                if !r.intersects(&pb) {
+                    return;
+                }
+                let key = [
+                    r.min.x.floor() as i64,
+                    r.min.y.floor() as i64,
+                    r.max.x.ceil() as i64,
+                    r.max.y.ceil() as i64,
+                ];
+                if !self.masks.contains_key(&key) {
+                    if let Some(mut mask) = sk::Mask::new(self.cfg.width, self.cfg.height) {
+                        if let Some(rect) = sk::Rect::from_ltrb(
+                            r.min.x as f32,
+                            r.min.y as f32,
+                            r.max.x as f32,
+                            r.max.y as f32,
+                        ) {
+                            let rp = sk::PathBuilder::from_rect(rect);
+                            mask.fill_path(
+                                &rp,
+                                sk::FillRule::Winding,
+                                true,
+                                sk::Transform::identity(),
+                            );
+                        }
+                        self.masks.insert(key, mask);
+                    }
+                }
+                Some(key)
+            }
+            None => None,
+        };
         let Some(path) = self.build_path(m, Vec2::ZERO) else {
             return;
         };
@@ -423,8 +466,9 @@ impl<'a> Canvas<'a> {
                 ..Default::default()
             };
             let stroke = self.sk_stroke(st, bg_px);
+            let mask = clip_key.and_then(|k| self.masks.get(&k));
             self.pixmap
-                .stroke_path(&path, &paint, &stroke, sk::Transform::identity(), None);
+                .stroke_path(&path, &paint, &stroke, sk::Transform::identity(), mask);
         }
         if has_fill {
             let paint = sk::Paint {
@@ -433,8 +477,9 @@ impl<'a> Canvas<'a> {
                 blend_mode: blend,
                 ..Default::default()
             };
+            let mask = clip_key.and_then(|k| self.masks.get(&k));
             self.pixmap
-                .fill_path(&path, &paint, fill_rule, sk::Transform::identity(), None);
+                .fill_path(&path, &paint, fill_rule, sk::Transform::identity(), mask);
         }
         if has_stroke {
             let paint = sk::Paint {
@@ -444,8 +489,9 @@ impl<'a> Canvas<'a> {
                 ..Default::default()
             };
             let stroke = self.sk_stroke(st, stroke_px);
+            let mask = clip_key.and_then(|k| self.masks.get(&k));
             self.pixmap
-                .stroke_path(&path, &paint, &stroke, sk::Transform::identity(), None);
+                .stroke_path(&path, &paint, &stroke, sk::Transform::identity(), mask);
         }
     }
 

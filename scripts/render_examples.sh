@@ -14,4 +14,6 @@ for f in crates/runwee/examples/*.rs; do
   echo "== rust example $ex"
   RUNWEE_QUALITY="$QUALITY" RUNWEE_OUT="renders/$ex.mp4" cargo run --release -q -p runwee --example "$ex"
 done
+echo "== lesson runner fixture"
+./target/release/runwee lesson crates/runwee-lesson/tests/fixture/topic --quality "$QUALITY" -o renders/lesson_fixture.mp4
 ls -la renders
