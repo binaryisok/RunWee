@@ -810,6 +810,12 @@ fn register_canvas(engine: &mut Engine) {
         c.set_shadow_color_css(v)
     });
     engine.register_set("shadow_blur", |c: &mut C, v: N| c.set_shadow_blur(f(&v)));
+    engine.register_set("shadow_offset_x", |c: &mut C, v: N| {
+        c.set_shadow_offset_x(f(&v))
+    });
+    engine.register_set("shadow_offset_y", |c: &mut C, v: N| {
+        c.set_shadow_offset_y(f(&v))
+    });
     // Gradients: stops = [[offset, colour], ...]
     let stops = |a: &Array| -> Vec<(f32, Color)> {
         a.iter()

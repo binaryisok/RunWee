@@ -421,6 +421,7 @@ impl<'a> Canvas<'a> {
                 has_stroke,
                 sk::BlendMode::SourceOver,
                 1.0,
+                clip_key,
             );
         }
         if st.glow > 0.0 {
@@ -441,6 +442,7 @@ impl<'a> Canvas<'a> {
                 true,
                 sk::BlendMode::Plus,
                 strength,
+                clip_key,
             );
             self.draw_effect_layer(
                 m,
@@ -453,6 +455,7 @@ impl<'a> Canvas<'a> {
                 true,
                 sk::BlendMode::Plus,
                 strength * 0.8,
+                clip_key,
             );
         }
         let blend = Self::blend(st.blend);
@@ -508,6 +511,7 @@ impl<'a> Canvas<'a> {
         stroke: bool,
         blend: sk::BlendMode,
         strength: f32,
+        clip_key: Option<[i64; 4]>,
     ) {
         let k = self.camera.pixel_scale(&self.cfg);
         let blur_px = (blur * k).max(0.5);
@@ -562,7 +566,7 @@ impl<'a> Canvas<'a> {
             layer.as_ref(),
             &pp,
             sk::Transform::identity(),
-            None,
+            clip_key.and_then(|k| self.masks.get(&k)),
         );
     }
 

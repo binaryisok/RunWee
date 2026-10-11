@@ -99,6 +99,8 @@ struct State {
     baseline: TextBaseline,
     shadow_color: Color,
     shadow_blur: f64,
+    /// `shadowOffsetX/Y` in canvas pixels (not affected by the transform).
+    shadow_offset: (f64, f64),
     /// Extra clip from `clip()` (scene rect), on top of the canvas bounds.
     clip: Option<(Vec2, Vec2)>,
 }
@@ -124,6 +126,7 @@ impl Default for State {
             baseline: TextBaseline::Alphabetic,
             shadow_color: Color::TRANSPARENT,
             shadow_blur: 0.0,
+            shadow_offset: (0.0, 0.0),
             clip: None,
         }
     }
@@ -315,6 +318,12 @@ impl Canvas2D {
     }
     pub fn set_shadow_blur(&mut self, b: f64) {
         self.state.shadow_blur = b.max(0.0);
+    }
+    pub fn set_shadow_offset_x(&mut self, x: f64) {
+        self.state.shadow_offset.0 = if x.is_finite() { x } else { 0.0 };
+    }
+    pub fn set_shadow_offset_y(&mut self, y: f64) {
+        self.state.shadow_offset.1 = if y.is_finite() { y } else { 0.0 };
     }
     /// CSS font shorthand, e.g. `"bold 13px Inter"` or `"600 15px Manrope, sans-serif"`.
     pub fn set_font(&mut self, font: &str) {
@@ -569,10 +578,18 @@ impl Canvas2D {
             blend: self.state.blend,
             ..Default::default()
         };
-        if self.state.shadow_blur > 0.0 && self.state.shadow_color.a > 0.0 {
-            st.glow = self.state.shadow_blur * self.device_scale() * self.unit * 0.5;
-            st.glow_color = Some(self.state.shadow_color);
-            st.glow_strength = self.state.shadow_color.a;
+        // Canvas shadows are drawn under the shape with normal blending; the
+        // blur is a Gaussian with sigma = shadowBlur / 2 and, like the offset,
+        // is in canvas pixels regardless of the current transform.
+        let (ox, oy) = self.state.shadow_offset;
+        if self.state.shadow_color.a > 0.0
+            && (self.state.shadow_blur > 0.0 || ox != 0.0 || oy != 0.0)
+        {
+            st.shadow = Some(Shadow {
+                offset: v2(ox * self.unit, -oy * self.unit),
+                blur: self.state.shadow_blur * 0.5 * self.unit,
+                color: self.state.shadow_color,
+            });
         }
         st
     }
@@ -1082,6 +1099,30 @@ mod tests {
         assert!((b.min - v2(0.0, -0.2)).length() < 1e-9, "{:?}", b);
         assert!((b.max - v2(0.2, 0.0)).length() < 1e-9, "{:?}", b);
         assert_eq!(m.children[0].style.fill, Paint::Solid(rgb8(255, 0, 0)));
+    }
+
+    #[test]
+    fn shadows_are_drop_shadows_in_canvas_pixels() {
+        let mut c = canvas();
+        c.scale(3.0, 3.0); // shadows ignore the transform
+        c.set_shadow_color_css("rgba(0, 0, 0, 0.5)");
+        c.set_shadow_blur(10.0);
+        c.set_shadow_offset_x(4.0);
+        c.set_shadow_offset_y(6.0);
+        c.fill_rect(0.0, 0.0, 10.0, 10.0);
+        c.set_shadow_color_css("transparent");
+        c.fill_rect(20.0, 0.0, 10.0, 10.0);
+        let m = c.finish();
+        let st = &m.children[0].style;
+        let sh = st.shadow.expect("shadow");
+        assert!(
+            (sh.offset - v2(0.04, -0.06)).length() < 1e-9,
+            "{:?}",
+            sh.offset
+        );
+        assert!((sh.blur - 0.05).abs() < 1e-9);
+        assert_eq!(st.glow, 0.0);
+        assert!(m.children[1].style.shadow.is_none());
     }
 
     #[test]

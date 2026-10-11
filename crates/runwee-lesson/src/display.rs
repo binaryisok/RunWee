@@ -48,6 +48,7 @@ pub enum Cmd {
     LineJoin(String),
     LineDashOffset(f64),
     ShadowBlur(f64),
+    ShadowOffset(bool, f64),
     Composite(String),
 }
 
@@ -169,6 +170,8 @@ pub fn parse(json: &str) -> Vec<Cmd> {
             "lineJoin" => Cmd::LineJoin(s(1)),
             "lineDashOffset" => Cmd::LineDashOffset(n(1)),
             "shadowBlur" => Cmd::ShadowBlur(n(1)),
+            "shadowOffsetX" => Cmd::ShadowOffset(false, n(1)),
+            "shadowOffsetY" => Cmd::ShadowOffset(true, n(1)),
             "globalCompositeOperation" => Cmd::Composite(s(1)),
             _ => continue,
         };
@@ -221,6 +224,8 @@ pub fn replay(cmds: &[Cmd], c: &mut Canvas2D) {
             Cmd::LineJoin(s) => c.set_line_join(s),
             Cmd::LineDashOffset(o) => c.set_line_dash_offset(*o),
             Cmd::ShadowBlur(b) => c.set_shadow_blur(*b),
+            Cmd::ShadowOffset(false, x) => c.set_shadow_offset_x(*x),
+            Cmd::ShadowOffset(true, y) => c.set_shadow_offset_y(*y),
             Cmd::Composite(s) => c.set_global_composite_operation(s),
         }
     }
