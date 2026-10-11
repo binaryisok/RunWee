@@ -111,9 +111,45 @@ runwee render <script.rhai> [options]
     --from <t> --to <t>     render part of the timeline
     --transparent           keep alpha (webm vp9 / mov prores 4444 / png)
     --no-audio, --no-captions
+runwee lesson <lesson-dir> [options]
+    --part intro|lecture    render one timeline only (default: both)
+    --limit <n>             first n narration steps (for quick previews)
+    --info                  print title, presets, steps and narration length
+    -o, -q, --still, --theme as above
 runwee new <file.rhai>      write a starter script
 runwee info                 ffmpeg / thread / format info
 runwee api                  list every script function signature
+```
+
+## Running existing canvas lessons
+
+`runwee lesson` renders a lesson written for the anims_bms web app (`index.js` with presets,
+`simulations.js` with canvas `draw()` code, `mathOverlay.js` and optional narration audio)
+without porting it. The original ES modules run unchanged in an embedded QuickJS engine; the
+`core/renderer.js` import is swapped for a shim, and browser globals are stubbed.
+
+The runner replays the web app's timeline. Each narration step switches preset and mode,
+runs the step's slider tweens, and calls `step()` then `draw()` once per output frame. Every
+canvas call is recorded and replayed through RunWee's Canvas 2D implementation (paths, arcs,
+gradients, dashes, text, transforms, clipping), so frames come out the same as in the browser.
+Around the canvas it lays out a header with the constraint equation, an equation board timed to
+the math overlay (falling back to the preset's derivations), voice-over from the lesson's audio
+files or TTS, and captions.
+
+```bash
+runwee lesson ../anims_bms/topics/mechanics/04-constrained-motion/01-basics --info
+runwee lesson ../anims_bms/topics/mechanics/04-constrained-motion/01-basics --limit 3 -q medium
+RUNWEE_TTS='piper -m en-us-lessac-medium.onnx -f {out}' runwee lesson <dir> -q 2k
+```
+
+The same Canvas 2D API is available to scripts (`let c = canvas2d(800, 400); c.begin_path(); …;
+add(c.finish());`), as is a general ODE solver:
+
+```rust
+// x'' = -k/m x - c x'  →  y = [x, v]
+let sim = ode(|t, y| [y[1], -4.0 * y[0] - 0.3 * y[1]], [1.0, 0.0], 10.0);
+always_redraw(|| spring_block(-5.0, 0.0, sim.get(time(), 0), BLUE));
+add(sim.trace(0, 1));                 // phase portrait
 ```
 
 ## What's inside
