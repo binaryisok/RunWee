@@ -475,7 +475,38 @@ mod tests {
             effect_between("ascii", 0.02, 0.0, 1.0);
             wait(b.duration);
         "#;
-        let out = script::run_script(src, rhai::Map::new()).unwrap();
+        // Only one script may run per process, so the STEM bindings ride along.
+        let stem = r#"
+            let fr = fourier(circle(1.0), 8);
+            add(epicycles(fr, 0.5, vec2(0.0, 0.0), WHITE));
+            add(linear_map([1.0, 1.0, 0.0, 1.0], 0.5, 2.0, true));
+            if (taylor("exp", 8, 1.0) - taylor_target("exp", 1.0)).abs() > 1e-3 { throw "taylor"; }
+            add(domain_coloring("z^2", vec2(0.0, 0.0), 2.0, 2.0, 1.0, 32));
+            add(ulam_spiral(121, 0.05, YELLOW, GRAY));
+            add(ripple_tank([vec2(-1.0, 0.0), vec2(1.0, 0.0)], vec2(0.0, 0.0), 2.0, 2.0, 0.4, 0.5));
+            add(prism_demo(vec2(0.0, 0.0), 1.0, 1.0));
+            add(kepler_orbit(2.0, 0.5, vec2(0.0, 0.0), 0.25, RED));
+            add(orbital(2, 1, 0, vec2(0.0, 0.0), 2.0));
+            let ph = titration_ph(0.1, 25.0, 0.1, 30.0, 0.0);
+            if ph < 11.0 { throw "excess strong base should be basic"; }
+            let ep = epidemic(30, vec2(0.0, 0.0), 3.0, 3.0, 2.0, 1);
+            let c = epidemic_counts(ep, 1.0);
+            if c[0] + c[1] + c[2] != 30 { throw "SIR counts must sum to N"; }
+            let st = sort_trace("merge", [5, 3, 9, 1, 7]);
+            add(sort_bars(st, st.len, 2.0, 1.0));
+            let p = path_search("astar", 12, 8, 0.1, 2);
+            let q = path_search("dijkstra", 12, 8, 0.1, 2);
+            if p.cost != q.cost { throw "A* must match Dijkstra's optimal cost"; }
+            add(path_view(p, 1000, 0.1));
+            add(bst_view(bst([4, 2, 6, 1, 3], 0.3, 0.5), 5, 0.1));
+            add(nn_view(neural_net([2, 3, 1], 1), [0.5, -0.5], 2.0, 1.0, 1.0));
+            add(galton_view(galton(20, 5, 1), 2.0, 0.05));
+            add(cellular(110, 31, 10, vec2(0.0, 0.0), 2.0, WHITE));
+            add(life_view(life_gun(10), 5, vec2(0.0, 0.0), 2.0, 1.2, GREEN));
+            wait(0.5);
+        "#;
+        let src = format!("{src}\n{stem}");
+        let out = script::run_script(&src, rhai::Map::new()).unwrap();
         assert!(!out.scenes.is_empty());
     }
 

@@ -224,6 +224,43 @@ always_redraw(|t| circle(1.0 + 0.5 * beat_env(b, "kick", t, 0.12)));   wait(b.du
 effect_between("kuwahara" | "dither" | "pixel-sort" | "ascii" | "crt", amount, from, to)
 ```
 
+## STEM visualisations
+
+A third layer of ready-made science and maths visuals, inspired by 3Blue1Brown,
+PhET, Nicky Case, VisuAlgo and Distill. The research notes are in [docs/ROADMAP_STEM.md](docs/ROADMAP_STEM.md).
+Each module is namespaced, so you bring it in with `use runwee::prelude::mathviz::*;`
+or the equivalent for the others. Every simulation is deterministic and sampled as a pure function of time.
+
+| Phase | Module | Highlights |
+|---|---|---|
+| S1 Maths | `mathviz` | Complex numbers (`Cx`). A DFT gives **Fourier epicycles** that redraw any outline, text included. 2×2 **linear maps** morph a grid, with eigenvectors and the determinant as an area. **Taylor** polynomials. A **unit circle** unrolls into sin/cos waves. Slope fields and ODE solution curves. **Domain colouring** of complex functions. The **Ulam spiral**, modular **times-table** circles, **Pascal's triangle mod p** and the **Collatz** tree. |
+| S2 Physics | `physviz` | A **ripple tank** with interference from N sources. **Doppler** wavefronts, including sonic booms. A 2D **ray tracer** with mirrors, thin lenses, glass polygons and discs, Snell's law, total internal reflection and Cauchy **dispersion**, plus wavelength-to-RGB colour. **Kepler** orbits with equal-area sectors. A **gravity-well** mesh. Phase portraits. **Double-pendulum** chaos. A Maxwell–Boltzmann histogram from a hard-sphere gas. **E×B drift** with a Boris pusher. |
+| S3 Chem & bio | `chembio` | **Hydrogen orbitals** ψₙₗₘ drawn as signed density slices, built from Laguerre and Legendre polynomials and real spherical harmonics. **Reaction energy profiles**, with or without a catalyst, plus the Arrhenius equation. Exact **titration curves** for strong and weak acids, with indicator colours. An agent-based **SIR epidemic** next to the SIR ODE. **Radioactive decay** of individual nuclei. |
+| S4 CS & data | `algoviz` | Recorded **sorting** traces for bubble, insertion, selection, quick, merge and heap sort. **BFS / DFS / Dijkstra / A*** on weighted grids. **BST** insertion. A **neural-network** forward pass. A **Galton board** whose counts converge on the binomial. A **bar-chart race**. **Elementary cellular automata** (rules 30, 90 and 110) and **Conway's Life**, including a Gosper glider gun. |
+| S5 Scripting | `runwee-cli` | Rhai bindings for all of the above, plus the `examples/scripts/stem.rhai` showcase. |
+
+```bash
+cargo run --release -p runwee --example stem_math    -- -q medium -o stem_math.mp4     # epicycles, linear maps, Taylor, unit circle, number art
+cargo run --release -p runwee --example stem_physics -- -q medium -o stem_physics.mp4  # ripple tank, Doppler, optics benches, orbits, chaos, E×B
+cargo run --release -p runwee --example stem_chembio -- -q medium -o stem_chembio.mp4  # orbitals, energy profile, titration, SIR, decay
+cargo run --release -p runwee --example stem_cs      -- -q medium -o stem_cs.mp4       # sorting race, path-finding, BST, NN, Galton, automata
+cargo run --release -p runwee-cli -- render examples/scripts/stem.rhai -q medium -o stem.mp4
+```
+
+```js
+let fr = fourier(text("∑", 3.0), 60);  epicycles(fr, t, center, BLUE)  epicycle_trace(fr, t, center, YELLOW)
+linear_map([a, b, c, d], t, range, show_eigen)   taylor("sin", n, x)   unit_circle(theta, center, r, wave_x, scale)
+domain_coloring("z^3-1" | "1/z" | "sin" | "exp" | "ln" | "z^2" | "rational", center, w, h, scale, px)
+ulam_spiral(n, cell, prime, other)  times_table(n, k, r, colors)  pascal_mod(rows, p, cell, colors)  collatz_tree(n, seg, colors)
+ripple_tank([p1, p2], center, w, h, wavelength, t)  doppler(start, velocity, t, color)  prism_demo(c, size, frac)  lens_demo(c, f, rays, frac)
+kepler_orbit(a, e, focus, phase, color)  gravity_well([[x, y, m], ...], half, depth, tilt, color)  wavelength_color(nm)
+orbital(n, l, m, center, size)  energy_profile(w, h, R, TS, P, cat_TS, progress)  titration_ph(ca, va, cb, vb, ka)  indicator_color("phenolphthalein", ph)
+let ep = epidemic(n, center, w, h, duration, seed);  epidemic_view(ep, t, r)  epidemic_counts(ep, t)
+let s = sort_trace("quick", data);  sort_bars(s, step, w, h)      let p = path_search("astar", cols, rows, walls, seed);  path_view(p, step, cell)  p.cost
+bst_view(bst(keys, dx, dy), upto, r)  nn_view(neural_net([4, 6, 3], seed), input, w, h, progress)  galton_view(galton(150, 9, seed), t, interval)
+cellular(30, width, rows, center, w, color)  life_view(life_gun(gens), gen, center, w, h, color)
+```
+
 ## Text-to-speech
 
 Narration renders without TTS: it is timed from word counts and shown as captions. To get
