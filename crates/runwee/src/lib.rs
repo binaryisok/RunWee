@@ -19,6 +19,7 @@ pub mod biology;
 pub mod boolean;
 pub mod canvas2d;
 pub mod captions;
+pub mod chembio;
 pub mod chemistry;
 pub mod cinematic;
 pub mod color;
@@ -69,6 +70,7 @@ pub mod prelude {
     pub use crate::biology;
     pub use crate::boolean::*;
     pub use crate::captions::{CaptionLook, CaptionStyle, Cue};
+    pub use crate::chembio;
     pub use crate::chemistry;
     pub use crate::cinematic::*;
     pub use crate::color::*;
