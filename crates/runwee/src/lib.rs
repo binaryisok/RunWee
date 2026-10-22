@@ -49,12 +49,14 @@ pub mod sim;
 pub mod sketch;
 pub mod solution;
 pub mod style;
+pub mod stylize;
 pub mod tex;
 pub mod text;
 pub mod three_d;
 pub mod transition;
 pub mod util;
 pub mod voice;
+pub mod wild;
 
 /// Everything needed to write scenes.
 pub mod prelude {
@@ -100,4 +102,5 @@ pub mod prelude {
     pub use crate::transition::{Dir, Presentation, Transition};
     pub use crate::util::*;
     pub use crate::voice::*;
+    pub use crate::wild::*;
 }
