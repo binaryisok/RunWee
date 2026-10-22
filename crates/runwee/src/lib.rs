@@ -11,6 +11,7 @@
     clippy::needless_range_loop
 )]
 
+pub mod algoviz;
 pub mod anim;
 pub mod assets;
 pub mod audio;
@@ -63,6 +64,7 @@ pub mod wild;
 
 /// Everything needed to write scenes.
 pub mod prelude {
+    pub use crate::algoviz;
     pub use crate::anim::*;
     pub use crate::assets::*;
     pub use crate::audio::{AudioClip, AudioData};
