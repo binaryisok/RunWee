@@ -40,6 +40,7 @@ pub mod output;
 pub mod particles;
 pub mod path;
 pub mod physics;
+pub mod physviz;
 pub mod rate;
 pub mod render;
 pub mod scene;
@@ -88,6 +89,7 @@ pub mod prelude {
     pub use crate::particles::*;
     pub use crate::path::*;
     pub use crate::physics;
+    pub use crate::physviz;
     pub use crate::rate::*;
     pub use crate::render::*;
     pub use crate::scene::*;

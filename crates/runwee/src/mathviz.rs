@@ -624,7 +624,11 @@ pub fn pascal_mod(rows: usize, p: u64, cell: f64, colors: &[Color]) -> Mobject {
 pub fn collatz(mut n: u64) -> Vec<u64> {
     let mut out = vec![n];
     while n > 1 {
-        n = if n.is_multiple_of(2) { n / 2 } else { 3 * n + 1 };
+        n = if n.is_multiple_of(2) {
+            n / 2
+        } else {
+            3 * n + 1
+        };
         out.push(n);
     }
     out
@@ -647,7 +651,11 @@ pub fn collatz_tree(
         let mut a = PI / 2.0;
         let mut pts = vec![p];
         for v in seq.iter().skip(1) {
-            a += if v.is_multiple_of(2) { even_turn } else { odd_turn };
+            a += if v.is_multiple_of(2) {
+                even_turn
+            } else {
+                odd_turn
+            };
             p += Vec2::from_angle(a) * seg;
             pts.push(p);
         }
