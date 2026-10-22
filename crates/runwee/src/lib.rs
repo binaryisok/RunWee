@@ -29,6 +29,7 @@ pub mod fonts;
 pub mod graph;
 pub mod math;
 pub mod mobject;
+pub mod motion;
 pub mod output;
 pub mod path;
 pub mod physics;
@@ -65,6 +66,7 @@ pub mod prelude {
     pub use crate::graph::*;
     pub use crate::math::*;
     pub use crate::mobject::*;
+    pub use crate::motion::*;
     pub use crate::output::*;
     pub use crate::path::*;
     pub use crate::physics;

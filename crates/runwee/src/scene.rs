@@ -800,6 +800,11 @@ impl Scene {
         self.play(anims)
     }
 
+    /// Run time an animation will take when played (explicit or natural).
+    pub fn anim_duration(&self, a: &Animation) -> f64 {
+        a.run_time.unwrap_or_else(|| self.natural_duration(a))
+    }
+
     fn natural_duration(&self, a: &Animation) -> f64 {
         match &a.kind {
             AnimKind::Write(o) | AnimKind::Unwrite(o) => {
