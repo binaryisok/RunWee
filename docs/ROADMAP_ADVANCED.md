@@ -47,3 +47,18 @@ random-access stills.
 
 Each phase ships unit tests, at least one example in `crates/runwee/examples/`, renders that
 are checked frame-by-frame, and its own commit(s).
+
+## As built
+
+The phases above were the plan; this is what landed (see the README section
+"Advanced motion, graphics and art" for the API overview):
+
+- Module names changed: camera work is in `cinematic.rs`; Verlet, boids and the drum
+  machine are in `wild.rs`; group-level `LayerFx` was not needed because the existing
+  `Effect`/composition stack plus `cinematic::rasterize` (cached blur) covered it.
+- Shadertoy-style shaders are provided by `generative::field_image` (parallel per-pixel
+  closures) and `sdf::raymarch_image`, not a separate `ShaderLayer` type.
+- Audio reactivity uses the synthesised `DrumMachine`'s exact hit times
+  (`hit_envelope`) and the existing `spectrum_at` / `loudness_at`; onset detection on
+  arbitrary audio files was not added.
+- Not built: soft bodies, toon ink edges and RGB block glitch post effects.

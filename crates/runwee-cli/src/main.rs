@@ -459,6 +459,27 @@ mod tests {
     }
 
     #[test]
+    fn advanced_bindings_run() {
+        let src = r#"
+            let o = register(star(5, 1.5, 0.7));
+            play(spring_pop_in(o, "bouncy"), 0.5);
+            play(smart_morph(o, circle(1.0)), 0.5);
+            let b = beat(120, 1, #{kick: "X...X...X...X...", hat: "x.x.x.x.x.x.x.x."});
+            let k = beat_env(b, "kick", 0.0, 0.1);
+            if k < 0.9 { throw "kick envelope should start at 1"; }
+            let n = fbm([0.3, 0.4], 4, 1) + perlin([1.2, 0.1], 2) + wiggle_at(1.0, 2.0, 1.0, 3);
+            add(sketchy(square(2.0), 0.05, 1));
+            add(lsystem("koch", 2, 2.0, WHITE, BLUE));
+            particles("fire", vec2(0.0, -2.0));
+            rope(vec2(0.0, 3.0), vec2(2.0, 3.0), RED, 1.0);
+            effect_between("ascii", 0.02, 0.0, 1.0);
+            wait(b.duration);
+        "#;
+        let out = script::run_script(src, rhai::Map::new()).unwrap();
+        assert!(!out.scenes.is_empty());
+    }
+
+    #[test]
     fn api_is_large() {
         assert!(script::api_signatures().len() > 300);
     }

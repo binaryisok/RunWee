@@ -174,6 +174,56 @@ A compact list of every feature and script function for coding agents is in [AGE
 For the full manim and Remotion mapping, see [docs/FEATURE_PARITY.md](docs/FEATURE_PARITY.md).
 For the architecture and phase plan, see [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md).
 
+## Advanced motion, graphics and art
+
+A second layer of features inspired by After Effects, GSAP, Motion Canvas, rough.js,
+p5.js, Shadertoy and fframes (research notes in [docs/ROADMAP_ADVANCED.md](docs/ROADMAP_ADVANCED.md)).
+Everything is still a pure function of time: simulations are baked once and sampled,
+so stills are random-access and frames render in parallel.
+
+| Phase | Module(s) | Highlights |
+|---|---|---|
+| A1 Motion core | `motion` | `Keyframes<T>` for any lerpable value (per-key easing, holds, Catmull-Rom smooth keys, repeat / ping-pong loops); closed-form damped `Spring` (bouncy / snappy / gentle / wobbly presets, initial velocity) and `spring_follow` chasing a moving target; AE-style `wiggle`, oscillators and inertial bounce; cosine palettes; GSAP-style `Stagger` (start / end / centre / edges / random / grid / point) and `Timeline` with position parameters and labels; `keyframe_anim`, `spring_pop_in`, `spring_shift`, `wiggle_anim`. |
+| A2 Shape & morph | `morph`, `sketch` | flubber-style `smart_morph` (arc-length resampling, best rotation and orientation, multi-subpath), `twist_morph`, Voronoi `shatter` / `assemble`, sand-grain `dissolve` / `materialize`, `neon_write` with a glowing pen tip, `jelly` squash-and-stretch, `echo_trail`, `motion_trail`, rough.js-style `sketchy()` with hachure / cross-hatch / zig-zag fills and line `boil()`. |
+| A3 Graphics & art | `noise`, `generative`, `particles`, `kinetic`, `style` | Conic (sweep) gradients; 18 blend modes (`Blend::ALL`); seeded Perlin / simplex / fbm / ridged / turbulence / Worley / curl noise and domain warping; parallel per-pixel `field_image` and `density_image`; flow fields, L-systems, phyllotaxis, circle packing, truchet, Voronoi mosaic, Clifford / De Jong attractors, contour maps, Gray-Scott reaction-diffusion; closed-form particle emitters (fire, sparks, smoke, snow, confetti, fireworks); kinetic type (scramble / decode, glyph waves, RGB-split glitch, text on path, per-glyph fly-in). |
+| A4 Camera & 3D | `cinematic`, `sdf` | Per-frame camera modifiers on top of keyed cameras: trauma-based `camera_shake`, lagging `camera_follow`, Catmull-Rom `camera_spline` dolly; `parallax_layer` with cached depth-of-field blur; synthwave `terrain_grid` + `retro_sun`; hyperspace `warp_starfield`; an SDF raymarcher (spheres, rounded boxes, tori, capsules, gyroids, smooth union / subtract / intersect, twist, repeat, displacement, checker materials, soft shadows, AO, fog) rendered in parallel with `raymarch_image`. |
+| A5 Wild extras | `wild`, `stylize` | Verlet physics (`Verlet::rope`, `Verlet::cloth` with wind, moving colliders and tearing) and `bake_boids` flocking, baked for deterministic playback; a synthesised `DrumMachine` (kick / snare / hat / clap / bass, step patterns, swing) that writes its audio to the scene and exposes exact hit times, so `hit_envelope` drives visuals in perfect sync; stylize post effects `Effect::Dither` (Bayer, custom palettes), `Kuwahara` (painterly), `PixelSort`, `Ascii`, `Crt`, also by name: `"dither"`, `"kuwahara"`, `"pixel-sort"`, `"ascii"`, `"crt"`. |
+| A6 Scripting | `runwee-cli` | Rhai bindings for the headline features (see below) and the `examples/scripts/advanced.rhai` showcase. |
+
+### Run the showcase examples
+
+```bash
+# each renders an mp4; add --still 4.5 -o frame.png for a single frame
+cargo run --release -p runwee --example motion_lab  -- -q medium -o motion_lab.mp4   # keyframes, springs, stagger, timeline
+cargo run --release -p runwee --example shape_morph -- -q medium -o shape_morph.mp4  # smart morph, shatter, dissolve, neon, sketch
+cargo run --release -p runwee --example art_gallery -- -q medium -o art_gallery.mp4  # noise fields, flow fields, L-systems, attractors, reaction-diffusion
+cargo run --release -p runwee --example fx_lab      -- -q medium -o fx_lab.mp4       # kinetic text, conic gradients, blend modes, particles
+cargo run --release -p runwee --example cinema_lab  -- -q medium -o cinema_lab.mp4   # parallax DOF, shake, follow-cam, synthwave, warp, SDF raymarching
+cargo run --release -p runwee --example wild_lab    -- -q medium -o wild_lab.mp4     # cloth, ropes, boids, drum machine with sound, stylize filters
+cargo run --release -p runwee-cli -- render examples/scripts/advanced.rhai -q medium -o advanced.mp4
+```
+
+### Script functions
+
+```js
+spring_pop_in(o, "bouncy")   spring_shift(o, LEFT * 3.0, "wobbly")   wiggle_anim(o, 3.0, 0.2, 2.0)
+smart_morph(o, circle(1))    twist_morph(o, square(2), 1.5)           shatter(o, 40)  assemble(o, 40)
+dissolve(o, 1500)            materialize(o, 1500)  neon_write(o, "#ff4fa0")  jelly(o, 0.2, 3.0)
+sketchy(m, 0.05, seed)       boil(m, t, 0.05)      echo_trail(o, 5, 0.08)    motion_trail(o, 0.5, TEAL)
+perlin(p, seed)  fbm(p, 5, seed)  ridged(p, 5, seed)  curl(p, t, seed)  domain_warp(p, 3.0, t, seed)
+wiggle_at(t, freq, amp, seed)  wiggle_vec(t, freq, amp, seed)  spring_value("snappy", t)  palette("neon", x)
+warp_image(0.35, 3.0, t, "sunset")  lsystem("tree", 4, 3.0, DARK_BROWN, GREEN)  truchet(0.5, WHITE, 1)
+voronoi_mosaic(80, "ocean", 1)  phyllotaxis(600, 0.12, 0.05, "sunset")  clifford(-1.4, 1.6, 1.0, 0.7, 0.45)
+glyph_wave(m, t, 0.2)  glitch(m, t, 0.8)  scramble("DECODE", t, 0.8, WHITE)  glyph_fly_in(o, DOWN, 1.0)
+warp_starfield(t, 1.0, WHITE)  retro_sun(vec2(0, 1), 2.0, t)
+particles("fire" | "sparks" | "smoke" | "snow" | "confetti" | "firework", vec2(0, -2))
+camera_shake(0.6, 0.7)  camera_follow(o, until, 0.3)
+rope(vec2(-2, 3), vec2(0, 3), "#ffcc55", 4.0)  boids(150, 5.0)
+let b = beat(120, 2, #{kick: "X...x...", snare: "....X...", hat: "x.x.x.x.", bass: "1..5..3."});
+always_redraw(|t| circle(1.0 + 0.5 * beat_env(b, "kick", t, 0.12)));   wait(b.duration);
+effect_between("kuwahara" | "dither" | "pixel-sort" | "ascii" | "crt", amount, from, to)
+```
+
 ## Text-to-speech
 
 Narration renders without TTS: it is timed from word counts and shown as captions. To get

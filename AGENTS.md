@@ -65,7 +65,7 @@ voiceover(text, |info| {...}) (animations inside run during the speech; `info` =
 `runwee lesson <dir>` runs a lesson's original `index.js` / `simulations.js` / `mathOverlay.js` in embedded QuickJS, records canvas calls per frame and lays out canvas + header chip + equation board + narration + captions. Lesson audio `audio/audio_<id>.mp3|wav` is used if present, else TTS.
 
 ## Rust API (crate `runwee`)
-`use runwee::prelude::*;` — `Scene` (add, play, wait, voiceover, always_redraw, set_background, render), mobjects/shapes/text/tex, `graph`, `anim`, `rate`, `effects`, `transition`/`compose` (Movie, Sequence, Layers), `audio`, `captions`, `voice`, `sim`, `physics`, `chemistry`, `biology`, `three_d`, `canvas2d`, `background`. Examples in `crates/runwee/examples/`.
+`use runwee::prelude::*;` — `Scene` (add, play, wait, voiceover, always_redraw, set_background, render), mobjects/shapes/text/tex, `graph`, `anim`, `rate`, `effects`, `transition`/`compose` (Movie, Sequence, Layers), `audio`, `captions`, `voice`, `sim`, `physics`, `chemistry`, `biology`, `three_d`, `canvas2d`, `background`; advanced layer: `motion` (Keyframes, Spring, Stagger, Timeline, wiggle), `morph` + `sketch`, `noise`, `generative`, `particles`, `kinetic`, `cinematic` (camera shake/follow/spline, parallax), `sdf` (raymarcher), `wild` (Verlet, boids, DrumMachine), `stylize` effects (dither, kuwahara, pixel-sort, ascii, crt). Examples in `crates/runwee/examples/` (motion_lab, shape_morph, art_gallery, fx_lab, cinema_lab, wild_lab). Script showcase: `examples/scripts/advanced.rhai`.
 
 ## Dev
 `cargo fmt --all && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace`; CI also renders all examples (`scripts/render_examples.sh`). Toolchain 1.97; needs ffmpeg on PATH.
