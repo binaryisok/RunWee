@@ -31,6 +31,7 @@ pub mod generative;
 pub mod graph;
 pub mod kinetic;
 pub mod math;
+pub mod mathviz;
 pub mod mobject;
 pub mod morph;
 pub mod motion;
@@ -78,6 +79,7 @@ pub mod prelude {
     pub use crate::graph::*;
     pub use crate::kinetic::*;
     pub use crate::math::*;
+    pub use crate::mathviz;
     pub use crate::mobject::*;
     pub use crate::morph::*;
     pub use crate::motion::*;
