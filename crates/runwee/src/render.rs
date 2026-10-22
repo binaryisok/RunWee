@@ -284,6 +284,27 @@ impl<'a> Canvas<'a> {
                     self.ink(p.color()).fade(alpha).to_skia(),
                 ))
             }
+            Paint::Conic {
+                center,
+                angle,
+                stops: st,
+            } => {
+                let c = self.xf.apply(*center);
+                // pixel space is y-down, so the screen angle is the negated scene angle
+                let d = self.xf.apply(*center + Vec2::from_angle(*angle)) - c;
+                let deg = d.y.atan2(d.x).to_degrees() as f32;
+                sk::SweepGradient::new(
+                    sk::Point::from_xy(c.x as f32, c.y as f32),
+                    0.0,
+                    360.0,
+                    stops(st),
+                    sk::SpreadMode::Pad,
+                    sk::Transform::from_rotate_at(deg, c.x as f32, c.y as f32),
+                )
+                .unwrap_or(sk::Shader::SolidColor(
+                    self.ink(p.color()).fade(alpha).to_skia(),
+                ))
+            }
         }
     }
 
@@ -319,6 +340,19 @@ impl<'a> Canvas<'a> {
             Blend::Screen => sk::BlendMode::Screen,
             Blend::Multiply => sk::BlendMode::Multiply,
             Blend::Overlay => sk::BlendMode::Overlay,
+            Blend::Darken => sk::BlendMode::Darken,
+            Blend::Lighten => sk::BlendMode::Lighten,
+            Blend::ColorDodge => sk::BlendMode::ColorDodge,
+            Blend::ColorBurn => sk::BlendMode::ColorBurn,
+            Blend::HardLight => sk::BlendMode::HardLight,
+            Blend::SoftLight => sk::BlendMode::SoftLight,
+            Blend::Difference => sk::BlendMode::Difference,
+            Blend::Exclusion => sk::BlendMode::Exclusion,
+            Blend::Hue => sk::BlendMode::Hue,
+            Blend::Saturation => sk::BlendMode::Saturation,
+            Blend::Color => sk::BlendMode::Color,
+            Blend::Luminosity => sk::BlendMode::Luminosity,
+            Blend::Xor => sk::BlendMode::Xor,
         }
     }
 

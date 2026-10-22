@@ -19,6 +19,13 @@ pub enum Paint {
         focal: Vec2,
         stops: Vec<(f32, Color)>,
     },
+    /// Conic (sweep / angular) gradient around `center`, starting at `angle`
+    /// (radians, counter-clockwise from +x) and sweeping a full turn.
+    Conic {
+        center: Vec2,
+        angle: f64,
+        stops: Vec<(f32, Color)>,
+    },
 }
 
 impl Default for Paint {
@@ -59,13 +66,26 @@ impl Paint {
                 .collect(),
         }
     }
+    /// Conic (angular) gradient; repeat the first colour last for a seamless wheel.
+    pub fn conic(center: Vec2, angle: f64, colors: &[Color]) -> Paint {
+        let n = colors.len().max(2) - 1;
+        Paint::Conic {
+            center,
+            angle,
+            stops: colors
+                .iter()
+                .enumerate()
+                .map(|(i, c)| (i as f32 / n as f32, *c))
+                .collect(),
+        }
+    }
     /// Representative solid colour (first stop for gradients).
     pub fn color(&self) -> Color {
         match self {
             Paint::Solid(c) => *c,
-            Paint::Linear { stops, .. } | Paint::Radial { stops, .. } => {
-                stops.first().map(|s| s.1).unwrap_or(WHITE)
-            }
+            Paint::Linear { stops, .. }
+            | Paint::Radial { stops, .. }
+            | Paint::Conic { stops, .. } => stops.first().map(|s| s.1).unwrap_or(WHITE),
         }
     }
     pub fn transform(&mut self, a: &Affine) {
@@ -85,12 +105,20 @@ impl Paint {
                 *focal = a.apply(*focal);
                 *radius *= a.mean_scale();
             }
+            Paint::Conic { center, angle, .. } => {
+                let p0 = a.apply(*center);
+                let p1 = a.apply(*center + Vec2::from_angle(*angle));
+                *center = p0;
+                *angle = (p1 - p0).angle();
+            }
         }
     }
     pub fn map_colors(&mut self, f: &dyn Fn(Color) -> Color) {
         match self {
             Paint::Solid(c) => *c = f(*c),
-            Paint::Linear { stops, .. } | Paint::Radial { stops, .. } => {
+            Paint::Linear { stops, .. }
+            | Paint::Radial { stops, .. }
+            | Paint::Conic { stops, .. } => {
                 for s in stops {
                     s.1 = f(s.1)
                 }
@@ -138,6 +166,26 @@ impl Paint {
                 center: c1.lerp(*c2, t),
                 radius: lerp(*r1, *r2, t),
                 focal: f1.lerp(*f2, t),
+                stops: st1
+                    .iter()
+                    .zip(st2)
+                    .map(|(a, b)| (a.0 + (b.0 - a.0) * tf, a.1.mix(b.1, tf)))
+                    .collect(),
+            },
+            (
+                Paint::Conic {
+                    center: c1,
+                    angle: a1,
+                    stops: st1,
+                },
+                Paint::Conic {
+                    center: c2,
+                    angle: a2,
+                    stops: st2,
+                },
+            ) if st1.len() == st2.len() => Paint::Conic {
+                center: c1.lerp(*c2, t),
+                angle: lerp(*a1, *a2, t),
                 stops: st1
                     .iter()
                     .zip(st2)
@@ -193,6 +241,95 @@ pub enum Blend {
     Screen,
     Multiply,
     Overlay,
+    Darken,
+    Lighten,
+    ColorDodge,
+    ColorBurn,
+    HardLight,
+    SoftLight,
+    Difference,
+    Exclusion,
+    Hue,
+    Saturation,
+    Color,
+    Luminosity,
+    Xor,
+}
+
+impl Blend {
+    /// Every blend mode, in declaration order.
+    pub const ALL: [Blend; 18] = [
+        Blend::Normal,
+        Blend::Add,
+        Blend::Screen,
+        Blend::Multiply,
+        Blend::Overlay,
+        Blend::Darken,
+        Blend::Lighten,
+        Blend::ColorDodge,
+        Blend::ColorBurn,
+        Blend::HardLight,
+        Blend::SoftLight,
+        Blend::Difference,
+        Blend::Exclusion,
+        Blend::Hue,
+        Blend::Saturation,
+        Blend::Color,
+        Blend::Luminosity,
+        Blend::Xor,
+    ];
+    /// Parse a CSS / canvas `globalCompositeOperation`-style name.
+    pub fn from_name(name: &str) -> Option<Blend> {
+        Some(
+            match name
+                .to_ascii_lowercase()
+                .replace(['-', '_', ' '], "")
+                .as_str()
+            {
+                "normal" | "sourceover" => Blend::Normal,
+                "add" | "lighter" | "plus" => Blend::Add,
+                "screen" => Blend::Screen,
+                "multiply" => Blend::Multiply,
+                "overlay" => Blend::Overlay,
+                "darken" => Blend::Darken,
+                "lighten" => Blend::Lighten,
+                "colordodge" | "dodge" => Blend::ColorDodge,
+                "colorburn" | "burn" => Blend::ColorBurn,
+                "hardlight" => Blend::HardLight,
+                "softlight" => Blend::SoftLight,
+                "difference" => Blend::Difference,
+                "exclusion" => Blend::Exclusion,
+                "hue" => Blend::Hue,
+                "saturation" => Blend::Saturation,
+                "color" => Blend::Color,
+                "luminosity" => Blend::Luminosity,
+                "xor" => Blend::Xor,
+                _ => return None,
+            },
+        )
+    }
+    pub fn name(self) -> &'static str {
+        match self {
+            Blend::Normal => "normal",
+            Blend::Add => "add",
+            Blend::Screen => "screen",
+            Blend::Multiply => "multiply",
+            Blend::Overlay => "overlay",
+            Blend::Darken => "darken",
+            Blend::Lighten => "lighten",
+            Blend::ColorDodge => "color-dodge",
+            Blend::ColorBurn => "color-burn",
+            Blend::HardLight => "hard-light",
+            Blend::SoftLight => "soft-light",
+            Blend::Difference => "difference",
+            Blend::Exclusion => "exclusion",
+            Blend::Hue => "hue",
+            Blend::Saturation => "saturation",
+            Blend::Color => "color",
+            Blend::Luminosity => "luminosity",
+            Blend::Xor => "xor",
+        }
+    }
 }
 
 /// Drop shadow parameters (scene units).

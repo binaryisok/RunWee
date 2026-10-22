@@ -307,8 +307,7 @@ impl Canvas2D {
             "lighter" => Blend::Add,
             "screen" => Blend::Screen,
             "multiply" => Blend::Multiply,
-            "overlay" => Blend::Overlay,
-            _ => Blend::Normal,
+            other => Blend::from_name(other).unwrap_or(Blend::Normal),
         };
     }
     pub fn set_shadow_color_css(&mut self, css: &str) {
