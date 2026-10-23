@@ -505,7 +505,34 @@ mod tests {
             add(life_view(life_gun(10), 5, vec2(0.0, 0.0), 2.0, 1.2, GREEN));
             wait(0.5);
         "#;
-        let src = format!("{src}\n{stem}");
+        // Storytelling, poetry, grammar and classroom bindings ride along too.
+        let story = r##"
+            let c = character("grandpa");
+            add(c.draw("wave", 0.5, 1.0, 1.0, vec2(0.0, 0.0)));
+            add(critter("crow").sized(0.8).draw(0.2, 0.0, 1.0, 1.0, vec2(1.0, 1.0)));
+            add(landscape(vec2(0.0, 0.0), 14.0, 8.0, "dusk", 1.0, 0.3, 2));
+            add(bubble("thought", "Hmm…", vec2(0.0, 2.0), 3.0, vec2(0.0, 0.5), 0.3, 1.0));
+            add(folk_frame("madhubani", vec2(0.0, 0.0), 12.0, 7.0, 0.6, 0.0, 1));
+            add(rain(vec2(0.0, 0.0), 6.0, 4.0, 1.0, 30, "#88aaff", 0.2, 3));
+            let lay = poem("T", "A", "Neither you nor I:\nThe wind is passing by.", "story", 0.3, vec2(-5.0, 2.0), 1.6);
+            if scheme(lay) != "AA" { throw "long-i rhyme"; }
+            add(reveal_poem(lay, 0.5, "typewriter", BLACK));
+            add(figure_callout(lay, "simile", 0, 0, 1, vec2(3.0, 0.0), "note", 1.0));
+            if count_syllables("trembling") != 2 { throw "syllables"; }
+            let pv = passive_voice("the boy", "kick", "the ball", "past simple");
+            if pv != "The ball was kicked by the boy." { throw "passive: " + pv; }
+            if article_for("hour") != "an" { throw "article"; }
+            if !verb_agrees("She", "goes") { throw "agreement"; }
+            add(pos_chips("The crow drank water.", vec2(0.0, 0.0), 0.3, 1.0, true));
+            add(parse_tree("The crow found a jug.", vec2(0.0, 3.0), 0.9, 0.3, 1.0));
+            add(quiz_card("Q?", ["a", "an"], 1, -1, vec2(0.0, 0.0), 5.0, 1.0, 0.0));
+            add(plot_mountain([["Start", "a"], ["Peak", "b"], ["End", "c"]], vec2(0.0, 0.0), 8.0, 5.0, 1.0, 0.0));
+            add(mood_meter("x", [["a", -0.5], ["b", 0.5]], vec2(0.0, 0.0), 6.0, 4.0, 1.0));
+            add(word_cloud([["kind", 3.0], ["brave", 2.0]], vec2(0.0, 0.0), 6.0, 4.0, 1, 1.0));
+            add(letter_page(["1 Road"], "1 May", "Dear Sam,", "Hello.", "Yours,", "Asha", vec2(0.0, 0.0), 8.0, 6.0, 1.0));
+            wait(0.2);
+        "##;
+        let src = format!("{src}\n{stem}\n{story}");
         let out = script::run_script(&src, rhai::Map::new()).unwrap();
         assert!(!out.scenes.is_empty());
     }

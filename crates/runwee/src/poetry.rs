@@ -305,6 +305,9 @@ pub fn rhyme_key(s: &str) -> RhymeKey {
 
 /// Do two line endings rhyme (exactly, or as a near rhyme)?
 pub fn rhymes(a: &str, b: &str) -> bool {
+    if long_i(a) && long_i(b) {
+        return true;
+    }
     let (ka, kb) = (rhyme_key(a), rhyme_key(b));
     if ka.vowel.is_empty() || kb.vowel.is_empty() {
         return false;
@@ -318,6 +321,25 @@ pub fn rhymes(a: &str, b: &str) -> bool {
         || (ka.tail.is_empty() && kb.tail == "s")
         || (kb.tail.is_empty() && ka.tail == "s");
     same_vowel && tails
+}
+
+/// One-syllable words ending in the long "i" sound spelt many ways:
+/// I, eye, by, sky, high, pie, rye …
+fn long_i(s: &str) -> bool {
+    let w = letters(s.split_whitespace().last().unwrap_or(""));
+    if w == "i" || w == "eye" || w == "aye" {
+        return true;
+    }
+    let stem = if let Some(x) = w.strip_suffix("igh") {
+        x
+    } else if let Some(x) = w.strip_suffix("ie").or_else(|| w.strip_suffix("ye")) {
+        x
+    } else if let Some(x) = w.strip_suffix('y') {
+        x
+    } else {
+        return false;
+    };
+    !stem.is_empty() && !stem.chars().any(|c| "aeiouy".contains(c))
 }
 
 /// Rhyme-scheme letters for a stanza (`A`, `B`, … in order of first appearance).
@@ -1214,5 +1236,12 @@ mod tests {
         assert!(!meter_marks(&lay, 0, Meter::Iambic, BLACK, 1.0)
             .children
             .is_empty());
+    }
+
+    #[test]
+    fn long_i_spellings_rhyme() {
+        assert!(rhymes("Neither you nor I:", "The wind is passing by."));
+        assert!(rhymes("toss the kites on high", "about the sky;"));
+        assert!(!rhymes("I", "you"));
     }
 }
