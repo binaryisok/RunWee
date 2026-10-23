@@ -261,6 +261,57 @@ bst_view(bst(keys, dx, dy), upto, r)  nn_view(neural_net([4, 6, 3], seed), input
 cellular(30, width, rows, center, w, color)  life_view(life_gun(gens), gen, center, w, h, color)
 ```
 
+## Storytelling, poetry & grammar
+
+A fourth layer for Class 6–9 English: storybook scenes, poems and grammar. The
+design is based on the structure of the NCERT English books (*Poorvi*,
+*Honeysuckle*, *Honeydew*, *Beehive* and the others listed in
+[docs/ROADMAP_STORY.md](docs/ROADMAP_STORY.md)). **No NCERT text or PDF is in this
+repository.** The examples use only public-domain poems (Frost, Wordsworth,
+Rossetti, Stevenson, Blake, Keats, Yeats, Kinney) and original retellings of folk tales.
+
+| Phase | Module | Highlights |
+|---|---|---|
+| T1 Story engine | `story` | Rigged **characters** (girl, boy, grandpa, teacher) with poses, blinking and lip-sync. **Critters** (crow, fox, bird). Six **palettes**. Scenery: sky, layered hills, sun and moon, trees (round, pine, banyan), houses and clouds. **Speech, thought, shout and whisper bubbles**. Narration boxes, drop caps and typewriter text. Transitions: **iris**, page turn, paper fold, open book and comic panels. |
+| T2 Art styles | `storyart` | **Madhubani, Warli and Gond** folk frames. Warli circle dance. Watercolour washes. Ink mountains. Shadow-puppet lamp screen. Cut-paper hills. Rain, snow, fireflies and falling leaves. Night overlay. |
+| T3 Poetry | `poetry` | Poem layout with **handwriting, typewriter and fade reveals**. **Rhyme-scheme highlights**. Meter marks for iambic, trochaic, anapestic and dactylic lines. Syllable counts and **clap-along beats**. **Figure-of-speech callouts** (simile, metaphor, personification, alliteration, …). Flip-in vocabulary cards. |
+| T4 Grammar | `grammar` | **POS-tagged word chips**. **Parse trees**. **Reed–Kellogg diagrams**. All **12 tense timelines** with conjugation. **Active→passive** and **direct→reported** word morphs. Subject–verb agreement checks. Animated **preposition scenes**. a/an article cards. Punctuation, fill-in and quiz cards. |
+| T5 Classroom | `lesson` | Comprehension cards. Story map. **Character web**. Summary and moral card. **Plot mountain**. **Mood meter** and dial. Diary and letter pages. Word cloud. |
+| T6 Scripting | `runwee-cli` | Rhai bindings for all of the above, in `crates/runwee-cli/src/storytell.rs`. Showcase scripts: `story.rhai`, `poem.rhai` and `grammar.rhai`. |
+
+```bash
+cargo run --release -p runwee --example story_engine -- -q medium -o story.mp4    # characters, critters, bubbles, transitions
+cargo run --release -p runwee --example storyart     -- -q medium -o storyart.mp4 # folk frames, watercolour, shadow puppets, weather
+cargo run --release -p runwee --example poetry       -- -q medium -o poetry.mp4   # reveals, rhyme, meter, figures, word cards
+cargo run --release -p runwee --example grammar      -- -q medium -o grammar.mp4  # POS, trees, diagrams, tenses, morphs, practice
+cargo run --release -p runwee --example lesson       -- -q medium -o lesson.mp4   # plot mountain, maps, webs, mood, cards, cloud
+cargo run --release -p runwee-cli -- render examples/scripts/story.rhai   -q medium -o story_script.mp4
+cargo run --release -p runwee-cli -- render examples/scripts/poem.rhai    -q medium -o poem.mp4
+cargo run --release -p runwee-cli -- render examples/scripts/grammar.rhai -q medium -o grammar_script.mp4
+```
+
+```js
+character("girl" | "boy" | "grandpa" | "teacher").draw(pose, t, talking, facing, pos)   // pose: idle wave point cheer think sit walk
+critter("crow" | "fox" | "bird").sized(s).draw(t, talking, motion, facing, pos)
+landscape(center, w, h, palette, t, day, seed)  sky(c, w, h, top, horizon)  tree(pos, h, "round"|"pine"|"banyan", leaf, sway, seed)
+house(pos, w, wall, roof, lit)  cloud(pos, w, c)  sun(pos, r, c)  moon(pos, r, c)  iris(p, center, color)
+bubble("speech"|"thought"|"shout"|"whisper", text, center, max_w, tail, size, p)  narration(text, center, w, size, palette, p)
+story_text / story_italic / hand_text(s, size, color)  font_text(s, font, size, color)  typed(s, p)  m.move_to_aligned(p, align)
+folk_frame("madhubani"|"warli"|"gond", c, w, h, band, t, seed)  warli_dance(c, r, rings, t, color)  watercolor_wash(c, w, h, top, bottom, seed)
+rain(c, w, h, t, n, color, wind, seed)  fireflies(c, w, h, t, n, color, seed)  snowfall(c, w, h, t, n, seed)  falling_leaves(c, w, h, t, n, size, colors, seed)
+let l = poem(title, author, text, font, size, top_left, leading);  reveal_poem(l, p, "handwriting"|"typewriter"|"fade", ink)
+rhyme_highlights(l, p)  scheme(l)  meter_marks(l, line, "iambic", color, p)  syllable_counts(l, dx, color, p)  clap_beats(l, line, t, bpm, color)
+figure_callout(l, "simile", line, first_word, last_word, label_at, note, p)  vocab_card(word, pos, meaning, example, c, w, h, flip, accent)
+pos_chips(sentence, c, size, p, labels)  pos_legend(c, size, p)  parse_tree(sentence, top, level_h, size, p)  sentence_diagram(sentence, origin, size, ink, p)
+tense_timeline("past perfect continuous", c, w, h, p, accent)  tense_sentence(subj, verb, rest, tense)  passive_voice(subj, verb, obj, tense)
+reported_speech(speaker, "male"|"female"|"plural", listener, quote)  word_morph(a, b, ca, cb, font, size, ink, new_color, p)
+sva_check(subj, verb, rest, c, size, p)  preposition_scene(prep, c, s, t)  article_card(word, c, w, p)  quiz_card(q, options, correct, chosen, c, w, reveal, t)
+punctuation_drop(words, [[i, mark], ...], c, size, p)  fill_blank(before, answer, after, c, size, p)
+plot_mountain([[label, event], ...], c, w, h, p, t)  story_map([[title, body], ...], c, w, h, p)  character_web(main, trait, [[name, link, trait], ...], c, rx, ry, p, t)
+mood_meter(who, [[label, -1..1], ...], c, w, h, p)  mood_dial(label, mood, c, r)  comprehension_card(n, q, a, c, w, p, reveal)  summary_card(title, summary, moral, c, w, p)
+diary_page(date, entry, sig, c, w, h, p)  letter_page([address...], date, salutation, body, closing, sig, c, w, h, p)  word_cloud([[word, weight], ...], c, w, h, seed, p)
+```
+
 ## Text-to-speech
 
 Narration renders without TTS: it is timed from word counts and shown as captions. To get

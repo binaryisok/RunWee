@@ -48,6 +48,8 @@ Examples use only original text or public-domain poems:
 * John Keats, *On the Grasshopper and Cricket* (1816);
 * Wordsworth, *A Slumber Did My Spirit Seal* (1800) and *Daffodils* (1807);
 * Christina Rossetti, *Who Has Seen the Wind?* (1872);
+* R. L. Stevenson, *The Wind* from *A Child's Garden of Verses* (1885);
+* the folk tale of the thirsty crow, retold in our own words;
 * Aesop's fable of the crow and the fox, retold in our own words.
 
 ## 2. Research: animation styles to support
