@@ -53,6 +53,7 @@ pub mod sim;
 pub mod sketch;
 pub mod solution;
 pub mod story;
+pub mod storyart;
 pub mod style;
 pub mod stylize;
 pub mod tex;
@@ -105,6 +106,7 @@ pub mod prelude {
     pub use crate::sketch::*;
     pub use crate::solution::*;
     pub use crate::story;
+    pub use crate::storyart;
     pub use crate::style::*;
     pub use crate::tex::{chem, tex, tex_parts, tex_sized, tex_text, MathTex};
     pub use crate::text::*;
