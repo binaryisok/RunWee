@@ -130,6 +130,38 @@ const BUNDLED: &[(&str, bool, bool, &[u8])] = &[
         false,
         font_bytes!("KaTeX_SansSerif-Regular.ttf"),
     ),
+    // Storytelling fonts (phase T0): a book serif, a handwriting face and a
+    // typewriter face, all SIL OFL 1.1.
+    (
+        "Crimson Text",
+        false,
+        false,
+        font_bytes!("CrimsonText-Regular.ttf"),
+    ),
+    (
+        "Crimson Text",
+        false,
+        true,
+        font_bytes!("CrimsonText-Italic.ttf"),
+    ),
+    (
+        "Crimson Text",
+        true,
+        false,
+        font_bytes!("CrimsonText-Bold.ttf"),
+    ),
+    (
+        "Patrick Hand",
+        false,
+        false,
+        font_bytes!("PatrickHand-Regular.ttf"),
+    ),
+    (
+        "Courier Prime",
+        false,
+        false,
+        font_bytes!("CourierPrime-Regular.ttf"),
+    ),
 ];
 
 struct Registry {
@@ -196,12 +228,16 @@ pub fn font(id: FontId) -> Arc<FontEntry> {
     registry().fonts.read().unwrap()[id.0].clone()
 }
 
-/// Find a font by family (case-insensitive aliases: "sans", "serif", "mono").
+/// Find a font by family (case-insensitive aliases: "sans", "serif", "mono",
+/// "story" (Crimson Text), "hand" (Patrick Hand), "courier" (Courier Prime)).
 pub fn find_font(family: &str, bold: bool, italic: bool) -> FontId {
     let fam = match family.to_ascii_lowercase().as_str() {
         "" | "sans" | "sans-serif" | "default" | "inter" => "Inter".to_string(),
         "serif" | "cm" | "computer modern" | "latex" | "main" => "KaTeX_Main".to_string(),
         "mono" | "monospace" | "code" | "typewriter" => "KaTeX_Typewriter".to_string(),
+        "book" | "story" | "storybook" | "crimson" => "Crimson Text".to_string(),
+        "hand" | "handwriting" | "chalk" => "Patrick Hand".to_string(),
+        "courier" | "typewriter-prime" | "typed" => "Courier Prime".to_string(),
         _ => family.to_string(),
     };
     let fonts = registry().fonts.read().unwrap();
@@ -464,5 +500,19 @@ mod tests {
             g[1].x + (ab.min.x + ab.max.x) / 2.0,
         );
         assert!((vc - ac).abs() < 1e-6, "centred: {vc} vs {ac}");
+    }
+}
+
+#[cfg(test)]
+mod story_font_tests {
+    use super::*;
+
+    #[test]
+    fn storytelling_fonts_resolve() {
+        assert_eq!(font(find_font("story", false, false)).family, "Crimson Text");
+        assert!(font(find_font("story", false, true)).italic);
+        assert_eq!(font(find_font("hand", false, false)).family, "Patrick Hand");
+        assert_eq!(font(find_font("courier", false, false)).family, "Courier Prime");
+        assert!(glyph_index(find_font("hand", false, false), 'g').is_some());
     }
 }
