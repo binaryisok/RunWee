@@ -509,10 +509,16 @@ mod story_font_tests {
 
     #[test]
     fn storytelling_fonts_resolve() {
-        assert_eq!(font(find_font("story", false, false)).family, "Crimson Text");
+        assert_eq!(
+            font(find_font("story", false, false)).family,
+            "Crimson Text"
+        );
         assert!(font(find_font("story", false, true)).italic);
         assert_eq!(font(find_font("hand", false, false)).family, "Patrick Hand");
-        assert_eq!(font(find_font("courier", false, false)).family, "Courier Prime");
+        assert_eq!(
+            font(find_font("courier", false, false)).family,
+            "Courier Prime"
+        );
         assert!(glyph_index(find_font("hand", false, false), 'g').is_some());
     }
 }
