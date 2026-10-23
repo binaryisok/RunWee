@@ -30,6 +30,7 @@ pub mod effects;
 pub mod extra;
 pub mod fonts;
 pub mod generative;
+pub mod grammar;
 pub mod graph;
 pub mod kinetic;
 pub mod math;
@@ -84,6 +85,7 @@ pub mod prelude {
     pub use crate::effects::Effect;
     pub use crate::extra::*;
     pub use crate::generative::*;
+    pub use crate::grammar;
     pub use crate::graph::*;
     pub use crate::kinetic::*;
     pub use crate::math::*;
