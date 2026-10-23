@@ -369,6 +369,26 @@ impl Scene {
             .max(self.bg_end)
             .max(1.0 / 120.0)
     }
+    /// No objects, trackers, markers, or audio, and the cursor is still at 0.
+    /// Used to avoid inserting a blank scene before the first lesson step.
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+            && self.trackers.is_empty()
+            && self.markers.is_empty()
+            && self.audio.is_empty()
+            && self.time <= 1e-9
+    }
+    /// Copy caption style, ink, and the base background onto a fresh scene.
+    /// Frame size is left as this scene was constructed.
+    pub fn inherit_look_from(&mut self, other: &Scene) {
+        self.captions.look = other.captions.look.clone();
+        self.config.ink = other.config.ink;
+        self.config.background = other.config.background;
+        self.camera0.background = other.camera0.background;
+        if let Some(bg) = other.backdrops.first() {
+            self.base_background(bg.2.clone());
+        }
+    }
     /// Record a named marker at the current time.
     pub fn marker(&mut self, name: &str) {
         self.markers.push(Marker {

@@ -156,6 +156,7 @@ pub const BACKGROUND_PRESETS: &[&str] = &[
     "white",
     "light",
     "paper",
+    "lesson",
     "chalkboard",
     "blackboard",
     "whiteboard",
@@ -297,6 +298,18 @@ impl Background {
             "black" | "manim" | "3b1b" => Background::Solid(c("#000000")),
             "white" => Background::Solid(c("#FFFFFF")),
             "light" => Background::linear(c("#FFFFFF"), c("#EEF1F6"), -90.0),
+            // Warm studio paper used by lesson scripts (`theme("lesson")`).
+            "lesson" => Background::radial(c("#FFFDF8"), c("#E4DCCE")).with_layer(
+                Background::Pattern {
+                    kind: Pattern::Dots,
+                    base: Color::TRANSPARENT,
+                    ink: c("#D5CBB8"),
+                    spacing: 1.0 / 52.0,
+                    width: 1.3,
+                    drift: Vec2::ZERO,
+                },
+                0.4,
+            ),
             "paper" => Background::Solid(c("#F7F3E8")).with_layer(
                 Background::Pattern {
                     kind: Pattern::Dots,
@@ -1001,6 +1014,7 @@ pub const THEME_PRESETS: &[&str] = &[
     "whiteboard",
     "blueprint",
     "paper",
+    "lesson",
     "notebook",
     "space",
     "sunset",

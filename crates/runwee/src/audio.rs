@@ -203,8 +203,37 @@ fn decode_with_ffmpeg(path: &Path) -> Result<AudioData> {
 }
 
 /// Duration of an audio file in seconds (Remotion's `getAudioDurationInSeconds`).
+/// Decodes the file, so the result matches the samples [`AudioData::load`] will mux.
 pub fn audio_duration(path: impl AsRef<Path>) -> Result<f64> {
     Ok(AudioData::load(path)?.duration())
+}
+
+/// Container duration from `ffprobe` (`format=duration`), without decoding samples.
+pub fn probe_duration(path: impl AsRef<Path>) -> Result<f64> {
+    let path = path.as_ref();
+    let out = std::process::Command::new("ffprobe")
+        .args([
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
+        ])
+        .arg(path)
+        .output()
+        .with_context(|| format!("ffprobe {}", path.display()))?;
+    if !out.status.success() {
+        bail!(
+            "ffprobe failed on {}: {}",
+            path.display(),
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    let text = String::from_utf8_lossy(&out.stdout);
+    text.trim()
+        .parse::<f64>()
+        .with_context(|| format!("ffprobe duration for {} ({text:?})", path.display()))
 }
 
 /// Volume of a clip: constant or a function of the clip-local time in seconds
