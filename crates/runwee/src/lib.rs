@@ -33,6 +33,7 @@ pub mod generative;
 pub mod grammar;
 pub mod graph;
 pub mod kinetic;
+pub mod lesson;
 pub mod math;
 pub mod mathviz;
 pub mod mobject;
@@ -88,6 +89,7 @@ pub mod prelude {
     pub use crate::grammar;
     pub use crate::graph::*;
     pub use crate::kinetic::*;
+    pub use crate::lesson;
     pub use crate::math::*;
     pub use crate::mathviz;
     pub use crate::mobject::*;
