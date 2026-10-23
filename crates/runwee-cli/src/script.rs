@@ -12,6 +12,13 @@ use runwee::{biology as bio, physics as phys};
 use std::cell::Cell;
 use std::sync::{Arc, Mutex, OnceLock};
 
+#[path = "advanced.rs"]
+mod advanced;
+#[path = "stem.rs"]
+mod stem;
+#[path = "storytell.rs"]
+mod storytell;
+
 type N = Dynamic;
 type R<T> = Result<T, Box<EvalAltResult>>;
 
@@ -2426,6 +2433,10 @@ fn build_engine() -> (Engine, Shared) {
     register_anims(&mut engine);
     register_scene(&mut engine, st.clone());
     register_3d_and_stem(&mut engine);
+    advanced::register_advanced(&mut engine, st.clone());
+    stem::register_stem(&mut engine);
+    storytell::register_story(&mut engine);
+    storytell::register_classroom(&mut engine);
     engine.on_print(|s| eprintln!("[script] {s}"));
     (engine, st)
 }

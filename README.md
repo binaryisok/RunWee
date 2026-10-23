@@ -174,6 +174,144 @@ A compact list of every feature and script function for coding agents is in [AGE
 For the full manim and Remotion mapping, see [docs/FEATURE_PARITY.md](docs/FEATURE_PARITY.md).
 For the architecture and phase plan, see [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md).
 
+## Advanced motion, graphics and art
+
+A second layer of features inspired by After Effects, GSAP, Motion Canvas, rough.js,
+p5.js, Shadertoy and fframes (research notes in [docs/ROADMAP_ADVANCED.md](docs/ROADMAP_ADVANCED.md)).
+Everything is still a pure function of time: simulations are baked once and sampled,
+so stills are random-access and frames render in parallel.
+
+| Phase | Module(s) | Highlights |
+|---|---|---|
+| A1 Motion core | `motion` | `Keyframes<T>` for any lerpable value (per-key easing, holds, Catmull-Rom smooth keys, repeat / ping-pong loops); closed-form damped `Spring` (bouncy / snappy / gentle / wobbly presets, initial velocity) and `spring_follow` chasing a moving target; AE-style `wiggle`, oscillators and inertial bounce; cosine palettes; GSAP-style `Stagger` (start / end / centre / edges / random / grid / point) and `Timeline` with position parameters and labels; `keyframe_anim`, `spring_pop_in`, `spring_shift`, `wiggle_anim`. |
+| A2 Shape & morph | `morph`, `sketch` | flubber-style `smart_morph` (arc-length resampling, best rotation and orientation, multi-subpath), `twist_morph`, Voronoi `shatter` / `assemble`, sand-grain `dissolve` / `materialize`, `neon_write` with a glowing pen tip, `jelly` squash-and-stretch, `echo_trail`, `motion_trail`, rough.js-style `sketchy()` with hachure / cross-hatch / zig-zag fills and line `boil()`. |
+| A3 Graphics & art | `noise`, `generative`, `particles`, `kinetic`, `style` | Conic (sweep) gradients; 18 blend modes (`Blend::ALL`); seeded Perlin / simplex / fbm / ridged / turbulence / Worley / curl noise and domain warping; parallel per-pixel `field_image` and `density_image`; flow fields, L-systems, phyllotaxis, circle packing, truchet, Voronoi mosaic, Clifford / De Jong attractors, contour maps, Gray-Scott reaction-diffusion; closed-form particle emitters (fire, sparks, smoke, snow, confetti, fireworks); kinetic type (scramble / decode, glyph waves, RGB-split glitch, text on path, per-glyph fly-in). |
+| A4 Camera & 3D | `cinematic`, `sdf` | Per-frame camera modifiers on top of keyed cameras: trauma-based `camera_shake`, lagging `camera_follow`, Catmull-Rom `camera_spline` dolly; `parallax_layer` with cached depth-of-field blur; synthwave `terrain_grid` + `retro_sun`; hyperspace `warp_starfield`; an SDF raymarcher (spheres, rounded boxes, tori, capsules, gyroids, smooth union / subtract / intersect, twist, repeat, displacement, checker materials, soft shadows, AO, fog) rendered in parallel with `raymarch_image`. |
+| A5 Wild extras | `wild`, `stylize` | Verlet physics (`Verlet::rope`, `Verlet::cloth` with wind, moving colliders and tearing) and `bake_boids` flocking, baked for deterministic playback; a synthesised `DrumMachine` (kick / snare / hat / clap / bass, step patterns, swing) that writes its audio to the scene and exposes exact hit times, so `hit_envelope` drives visuals in perfect sync; stylize post effects `Effect::Dither` (Bayer, custom palettes), `Kuwahara` (painterly), `PixelSort`, `Ascii`, `Crt`, also by name: `"dither"`, `"kuwahara"`, `"pixel-sort"`, `"ascii"`, `"crt"`. |
+| A6 Scripting | `runwee-cli` | Rhai bindings for the headline features (see below) and the `examples/scripts/advanced.rhai` showcase. |
+
+### Run the showcase examples
+
+```bash
+# each renders an mp4; add --still 4.5 -o frame.png for a single frame
+cargo run --release -p runwee --example motion_lab  -- -q medium -o motion_lab.mp4   # keyframes, springs, stagger, timeline
+cargo run --release -p runwee --example shape_morph -- -q medium -o shape_morph.mp4  # smart morph, shatter, dissolve, neon, sketch
+cargo run --release -p runwee --example art_gallery -- -q medium -o art_gallery.mp4  # noise fields, flow fields, L-systems, attractors, reaction-diffusion
+cargo run --release -p runwee --example fx_lab      -- -q medium -o fx_lab.mp4       # kinetic text, conic gradients, blend modes, particles
+cargo run --release -p runwee --example cinema_lab  -- -q medium -o cinema_lab.mp4   # parallax DOF, shake, follow-cam, synthwave, warp, SDF raymarching
+cargo run --release -p runwee --example wild_lab    -- -q medium -o wild_lab.mp4     # cloth, ropes, boids, drum machine with sound, stylize filters
+cargo run --release -p runwee-cli -- render examples/scripts/advanced.rhai -q medium -o advanced.mp4
+```
+
+### Script functions
+
+```js
+spring_pop_in(o, "bouncy")   spring_shift(o, LEFT * 3.0, "wobbly")   wiggle_anim(o, 3.0, 0.2, 2.0)
+smart_morph(o, circle(1))    twist_morph(o, square(2), 1.5)           shatter(o, 40)  assemble(o, 40)
+dissolve(o, 1500)            materialize(o, 1500)  neon_write(o, "#ff4fa0")  jelly(o, 0.2, 3.0)
+sketchy(m, 0.05, seed)       boil(m, t, 0.05)      echo_trail(o, 5, 0.08)    motion_trail(o, 0.5, TEAL)
+perlin(p, seed)  fbm(p, 5, seed)  ridged(p, 5, seed)  curl(p, t, seed)  domain_warp(p, 3.0, t, seed)
+wiggle_at(t, freq, amp, seed)  wiggle_vec(t, freq, amp, seed)  spring_value("snappy", t)  palette("neon", x)
+warp_image(0.35, 3.0, t, "sunset")  lsystem("tree", 4, 3.0, DARK_BROWN, GREEN)  truchet(0.5, WHITE, 1)
+voronoi_mosaic(80, "ocean", 1)  phyllotaxis(600, 0.12, 0.05, "sunset")  clifford(-1.4, 1.6, 1.0, 0.7, 0.45)
+glyph_wave(m, t, 0.2)  glitch(m, t, 0.8)  scramble("DECODE", t, 0.8, WHITE)  glyph_fly_in(o, DOWN, 1.0)
+warp_starfield(t, 1.0, WHITE)  retro_sun(vec2(0, 1), 2.0, t)
+particles("fire" | "sparks" | "smoke" | "snow" | "confetti" | "firework", vec2(0, -2))
+camera_shake(0.6, 0.7)  camera_follow(o, until, 0.3)
+rope(vec2(-2, 3), vec2(0, 3), "#ffcc55", 4.0)  boids(150, 5.0)
+let b = beat(120, 2, #{kick: "X...x...", snare: "....X...", hat: "x.x.x.x.", bass: "1..5..3."});
+always_redraw(|t| circle(1.0 + 0.5 * beat_env(b, "kick", t, 0.12)));   wait(b.duration);
+effect_between("kuwahara" | "dither" | "pixel-sort" | "ascii" | "crt", amount, from, to)
+```
+
+## STEM visualisations
+
+A third layer of ready-made science and maths visuals, inspired by 3Blue1Brown,
+PhET, Nicky Case, VisuAlgo and Distill. The research notes are in [docs/ROADMAP_STEM.md](docs/ROADMAP_STEM.md).
+Each module is namespaced, so you bring it in with `use runwee::prelude::mathviz::*;`
+or the equivalent for the others. Every simulation is deterministic and sampled as a pure function of time.
+
+| Phase | Module | Highlights |
+|---|---|---|
+| S1 Maths | `mathviz` | Complex numbers (`Cx`). A DFT gives **Fourier epicycles** that redraw any outline, text included. 2×2 **linear maps** morph a grid, with eigenvectors and the determinant as an area. **Taylor** polynomials. A **unit circle** unrolls into sin/cos waves. Slope fields and ODE solution curves. **Domain colouring** of complex functions. The **Ulam spiral**, modular **times-table** circles, **Pascal's triangle mod p** and the **Collatz** tree. |
+| S2 Physics | `physviz` | A **ripple tank** with interference from N sources. **Doppler** wavefronts, including sonic booms. A 2D **ray tracer** with mirrors, thin lenses, glass polygons and discs, Snell's law, total internal reflection and Cauchy **dispersion**, plus wavelength-to-RGB colour. **Kepler** orbits with equal-area sectors. A **gravity-well** mesh. Phase portraits. **Double-pendulum** chaos. A Maxwell–Boltzmann histogram from a hard-sphere gas. **E×B drift** with a Boris pusher. |
+| S3 Chem & bio | `chembio` | **Hydrogen orbitals** ψₙₗₘ drawn as signed density slices, built from Laguerre and Legendre polynomials and real spherical harmonics. **Reaction energy profiles**, with or without a catalyst, plus the Arrhenius equation. Exact **titration curves** for strong and weak acids, with indicator colours. An agent-based **SIR epidemic** next to the SIR ODE. **Radioactive decay** of individual nuclei. |
+| S4 CS & data | `algoviz` | Recorded **sorting** traces for bubble, insertion, selection, quick, merge and heap sort. **BFS / DFS / Dijkstra / A*** on weighted grids. **BST** insertion. A **neural-network** forward pass. A **Galton board** whose counts converge on the binomial. A **bar-chart race**. **Elementary cellular automata** (rules 30, 90 and 110) and **Conway's Life**, including a Gosper glider gun. |
+| S5 Scripting | `runwee-cli` | Rhai bindings for all of the above, plus the `examples/scripts/stem.rhai` showcase. |
+
+```bash
+cargo run --release -p runwee --example stem_math    -- -q medium -o stem_math.mp4     # epicycles, linear maps, Taylor, unit circle, number art
+cargo run --release -p runwee --example stem_physics -- -q medium -o stem_physics.mp4  # ripple tank, Doppler, optics benches, orbits, chaos, E×B
+cargo run --release -p runwee --example stem_chembio -- -q medium -o stem_chembio.mp4  # orbitals, energy profile, titration, SIR, decay
+cargo run --release -p runwee --example stem_cs      -- -q medium -o stem_cs.mp4       # sorting race, path-finding, BST, NN, Galton, automata
+cargo run --release -p runwee-cli -- render examples/scripts/stem.rhai -q medium -o stem.mp4
+```
+
+```js
+let fr = fourier(text("∑", 3.0), 60);  epicycles(fr, t, center, BLUE)  epicycle_trace(fr, t, center, YELLOW)
+linear_map([a, b, c, d], t, range, show_eigen)   taylor("sin", n, x)   unit_circle(theta, center, r, wave_x, scale)
+domain_coloring("z^3-1" | "1/z" | "sin" | "exp" | "ln" | "z^2" | "rational", center, w, h, scale, px)
+ulam_spiral(n, cell, prime, other)  times_table(n, k, r, colors)  pascal_mod(rows, p, cell, colors)  collatz_tree(n, seg, colors)
+ripple_tank([p1, p2], center, w, h, wavelength, t)  doppler(start, velocity, t, color)  prism_demo(c, size, frac)  lens_demo(c, f, rays, frac)
+kepler_orbit(a, e, focus, phase, color)  gravity_well([[x, y, m], ...], half, depth, tilt, color)  wavelength_color(nm)
+orbital(n, l, m, center, size)  energy_profile(w, h, R, TS, P, cat_TS, progress)  titration_ph(ca, va, cb, vb, ka)  indicator_color("phenolphthalein", ph)
+let ep = epidemic(n, center, w, h, duration, seed);  epidemic_view(ep, t, r)  epidemic_counts(ep, t)
+let s = sort_trace("quick", data);  sort_bars(s, step, w, h)      let p = path_search("astar", cols, rows, walls, seed);  path_view(p, step, cell)  p.cost
+bst_view(bst(keys, dx, dy), upto, r)  nn_view(neural_net([4, 6, 3], seed), input, w, h, progress)  galton_view(galton(150, 9, seed), t, interval)
+cellular(30, width, rows, center, w, color)  life_view(life_gun(gens), gen, center, w, h, color)
+```
+
+## Storytelling, poetry & grammar
+
+A fourth layer for Class 6–9 English: storybook scenes, poems and grammar. The
+design is based on the structure of the NCERT English books (*Poorvi*,
+*Honeysuckle*, *Honeydew*, *Beehive* and the others listed in
+[docs/ROADMAP_STORY.md](docs/ROADMAP_STORY.md)). **No NCERT text or PDF is in this
+repository.** The examples use only public-domain poems (Frost, Wordsworth,
+Rossetti, Stevenson, Blake, Keats, Yeats, Kinney) and original retellings of folk tales.
+
+| Phase | Module | Highlights |
+|---|---|---|
+| T1 Story engine | `story` | Rigged **characters** (girl, boy, grandpa, teacher) with poses, blinking and lip-sync. **Critters** (crow, fox, bird). Six **palettes**. Scenery: sky, layered hills, sun and moon, trees (round, pine, banyan), houses and clouds. **Speech, thought, shout and whisper bubbles**. Narration boxes, drop caps and typewriter text. Transitions: **iris**, page turn, paper fold, open book and comic panels. |
+| T2 Art styles | `storyart` | **Madhubani, Warli and Gond** folk frames. Warli circle dance. Watercolour washes. Ink mountains. Shadow-puppet lamp screen. Cut-paper hills. Rain, snow, fireflies and falling leaves. Night overlay. |
+| T3 Poetry | `poetry` | Poem layout with **handwriting, typewriter and fade reveals**. **Rhyme-scheme highlights**. Meter marks for iambic, trochaic, anapestic and dactylic lines. Syllable counts and **clap-along beats**. **Figure-of-speech callouts** (simile, metaphor, personification, alliteration, …). Flip-in vocabulary cards. |
+| T4 Grammar | `grammar` | **POS-tagged word chips**. **Parse trees**. **Reed–Kellogg diagrams**. All **12 tense timelines** with conjugation. **Active→passive** and **direct→reported** word morphs. Subject–verb agreement checks. Animated **preposition scenes**. a/an article cards. Punctuation, fill-in and quiz cards. |
+| T5 Classroom | `lesson` | Comprehension cards. Story map. **Character web**. Summary and moral card. **Plot mountain**. **Mood meter** and dial. Diary and letter pages. Word cloud. |
+| T6 Scripting | `runwee-cli` | Rhai bindings for all of the above, in `crates/runwee-cli/src/storytell.rs`. Showcase scripts: `story.rhai`, `poem.rhai` and `grammar.rhai`. |
+
+```bash
+cargo run --release -p runwee --example story_engine -- -q medium -o story.mp4    # characters, critters, bubbles, transitions
+cargo run --release -p runwee --example storyart     -- -q medium -o storyart.mp4 # folk frames, watercolour, shadow puppets, weather
+cargo run --release -p runwee --example poetry       -- -q medium -o poetry.mp4   # reveals, rhyme, meter, figures, word cards
+cargo run --release -p runwee --example grammar      -- -q medium -o grammar.mp4  # POS, trees, diagrams, tenses, morphs, practice
+cargo run --release -p runwee --example lesson       -- -q medium -o lesson.mp4   # plot mountain, maps, webs, mood, cards, cloud
+cargo run --release -p runwee-cli -- render examples/scripts/story.rhai   -q medium -o story_script.mp4
+cargo run --release -p runwee-cli -- render examples/scripts/poem.rhai    -q medium -o poem.mp4
+cargo run --release -p runwee-cli -- render examples/scripts/grammar.rhai -q medium -o grammar_script.mp4
+```
+
+```js
+character("girl" | "boy" | "grandpa" | "teacher").draw(pose, t, talking, facing, pos)   // pose: idle wave point cheer think sit walk
+critter("crow" | "fox" | "bird").sized(s).draw(t, talking, motion, facing, pos)
+landscape(center, w, h, palette, t, day, seed)  sky(c, w, h, top, horizon)  tree(pos, h, "round"|"pine"|"banyan", leaf, sway, seed)
+house(pos, w, wall, roof, lit)  cloud(pos, w, c)  sun(pos, r, c)  moon(pos, r, c)  iris(p, center, color)
+bubble("speech"|"thought"|"shout"|"whisper", text, center, max_w, tail, size, p)  narration(text, center, w, size, palette, p)
+story_text / story_italic / hand_text(s, size, color)  font_text(s, font, size, color)  typed(s, p)  m.move_to_aligned(p, align)
+folk_frame("madhubani"|"warli"|"gond", c, w, h, band, t, seed)  warli_dance(c, r, rings, t, color)  watercolor_wash(c, w, h, top, bottom, seed)
+rain(c, w, h, t, n, color, wind, seed)  fireflies(c, w, h, t, n, color, seed)  snowfall(c, w, h, t, n, seed)  falling_leaves(c, w, h, t, n, size, colors, seed)
+let l = poem(title, author, text, font, size, top_left, leading);  reveal_poem(l, p, "handwriting"|"typewriter"|"fade", ink)
+rhyme_highlights(l, p)  scheme(l)  meter_marks(l, line, "iambic", color, p)  syllable_counts(l, dx, color, p)  clap_beats(l, line, t, bpm, color)
+figure_callout(l, "simile", line, first_word, last_word, label_at, note, p)  vocab_card(word, pos, meaning, example, c, w, h, flip, accent)
+pos_chips(sentence, c, size, p, labels)  pos_legend(c, size, p)  parse_tree(sentence, top, level_h, size, p)  sentence_diagram(sentence, origin, size, ink, p)
+tense_timeline("past perfect continuous", c, w, h, p, accent)  tense_sentence(subj, verb, rest, tense)  passive_voice(subj, verb, obj, tense)
+reported_speech(speaker, "male"|"female"|"plural", listener, quote)  word_morph(a, b, ca, cb, font, size, ink, new_color, p)
+sva_check(subj, verb, rest, c, size, p)  preposition_scene(prep, c, s, t)  article_card(word, c, w, p)  quiz_card(q, options, correct, chosen, c, w, reveal, t)
+punctuation_drop(words, [[i, mark], ...], c, size, p)  fill_blank(before, answer, after, c, size, p)
+plot_mountain([[label, event], ...], c, w, h, p, t)  story_map([[title, body], ...], c, w, h, p)  character_web(main, trait, [[name, link, trait], ...], c, rx, ry, p, t)
+mood_meter(who, [[label, -1..1], ...], c, w, h, p)  mood_dial(label, mood, c, r)  comprehension_card(n, q, a, c, w, p, reveal)  summary_card(title, summary, moral, c, w, p)
+diary_page(date, entry, sig, c, w, h, p)  letter_page([address...], date, salutation, body, closing, sig, c, w, h, p)  word_cloud([[word, weight], ...], c, w, h, seed, p)
+```
+
 ## Text-to-speech
 
 Narration renders without TTS: it is timed from word counts and shown as captions. To get

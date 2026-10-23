@@ -459,6 +459,85 @@ mod tests {
     }
 
     #[test]
+    fn advanced_bindings_run() {
+        let src = r#"
+            let o = register(star(5, 1.5, 0.7));
+            play(spring_pop_in(o, "bouncy"), 0.5);
+            play(smart_morph(o, circle(1.0)), 0.5);
+            let b = beat(120, 1, #{kick: "X...X...X...X...", hat: "x.x.x.x.x.x.x.x."});
+            let k = beat_env(b, "kick", 0.0, 0.1);
+            if k < 0.9 { throw "kick envelope should start at 1"; }
+            let n = fbm([0.3, 0.4], 4, 1) + perlin([1.2, 0.1], 2) + wiggle_at(1.0, 2.0, 1.0, 3);
+            add(sketchy(square(2.0), 0.05, 1));
+            add(lsystem("koch", 2, 2.0, WHITE, BLUE));
+            particles("fire", vec2(0.0, -2.0));
+            rope(vec2(0.0, 3.0), vec2(2.0, 3.0), RED, 1.0);
+            effect_between("ascii", 0.02, 0.0, 1.0);
+            wait(b.duration);
+        "#;
+        // Only one script may run per process, so the STEM bindings ride along.
+        let stem = r#"
+            let fr = fourier(circle(1.0), 8);
+            add(epicycles(fr, 0.5, vec2(0.0, 0.0), WHITE));
+            add(linear_map([1.0, 1.0, 0.0, 1.0], 0.5, 2.0, true));
+            if (taylor("exp", 8, 1.0) - taylor_target("exp", 1.0)).abs() > 1e-3 { throw "taylor"; }
+            add(domain_coloring("z^2", vec2(0.0, 0.0), 2.0, 2.0, 1.0, 32));
+            add(ulam_spiral(121, 0.05, YELLOW, GRAY));
+            add(ripple_tank([vec2(-1.0, 0.0), vec2(1.0, 0.0)], vec2(0.0, 0.0), 2.0, 2.0, 0.4, 0.5));
+            add(prism_demo(vec2(0.0, 0.0), 1.0, 1.0));
+            add(kepler_orbit(2.0, 0.5, vec2(0.0, 0.0), 0.25, RED));
+            add(orbital(2, 1, 0, vec2(0.0, 0.0), 2.0));
+            let ph = titration_ph(0.1, 25.0, 0.1, 30.0, 0.0);
+            if ph < 11.0 { throw "excess strong base should be basic"; }
+            let ep = epidemic(30, vec2(0.0, 0.0), 3.0, 3.0, 2.0, 1);
+            let c = epidemic_counts(ep, 1.0);
+            if c[0] + c[1] + c[2] != 30 { throw "SIR counts must sum to N"; }
+            let st = sort_trace("merge", [5, 3, 9, 1, 7]);
+            add(sort_bars(st, st.len, 2.0, 1.0));
+            let p = path_search("astar", 12, 8, 0.1, 2);
+            let q = path_search("dijkstra", 12, 8, 0.1, 2);
+            if p.cost != q.cost { throw "A* must match Dijkstra's optimal cost"; }
+            add(path_view(p, 1000, 0.1));
+            add(bst_view(bst([4, 2, 6, 1, 3], 0.3, 0.5), 5, 0.1));
+            add(nn_view(neural_net([2, 3, 1], 1), [0.5, -0.5], 2.0, 1.0, 1.0));
+            add(galton_view(galton(20, 5, 1), 2.0, 0.05));
+            add(cellular(110, 31, 10, vec2(0.0, 0.0), 2.0, WHITE));
+            add(life_view(life_gun(10), 5, vec2(0.0, 0.0), 2.0, 1.2, GREEN));
+            wait(0.5);
+        "#;
+        // Storytelling, poetry, grammar and classroom bindings ride along too.
+        let story = r##"
+            let c = character("grandpa");
+            add(c.draw("wave", 0.5, 1.0, 1.0, vec2(0.0, 0.0)));
+            add(critter("crow").sized(0.8).draw(0.2, 0.0, 1.0, 1.0, vec2(1.0, 1.0)));
+            add(landscape(vec2(0.0, 0.0), 14.0, 8.0, "dusk", 1.0, 0.3, 2));
+            add(bubble("thought", "Hmm…", vec2(0.0, 2.0), 3.0, vec2(0.0, 0.5), 0.3, 1.0));
+            add(folk_frame("madhubani", vec2(0.0, 0.0), 12.0, 7.0, 0.6, 0.0, 1));
+            add(rain(vec2(0.0, 0.0), 6.0, 4.0, 1.0, 30, "#88aaff", 0.2, 3));
+            let lay = poem("T", "A", "Neither you nor I:\nThe wind is passing by.", "story", 0.3, vec2(-5.0, 2.0), 1.6);
+            if scheme(lay) != "AA" { throw "long-i rhyme"; }
+            add(reveal_poem(lay, 0.5, "typewriter", BLACK));
+            add(figure_callout(lay, "simile", 0, 0, 1, vec2(3.0, 0.0), "note", 1.0));
+            if count_syllables("trembling") != 2 { throw "syllables"; }
+            let pv = passive_voice("the boy", "kick", "the ball", "past simple");
+            if pv != "The ball was kicked by the boy." { throw "passive: " + pv; }
+            if article_for("hour") != "an" { throw "article"; }
+            if !verb_agrees("She", "goes") { throw "agreement"; }
+            add(pos_chips("The crow drank water.", vec2(0.0, 0.0), 0.3, 1.0, true));
+            add(parse_tree("The crow found a jug.", vec2(0.0, 3.0), 0.9, 0.3, 1.0));
+            add(quiz_card("Q?", ["a", "an"], 1, -1, vec2(0.0, 0.0), 5.0, 1.0, 0.0));
+            add(plot_mountain([["Start", "a"], ["Peak", "b"], ["End", "c"]], vec2(0.0, 0.0), 8.0, 5.0, 1.0, 0.0));
+            add(mood_meter("x", [["a", -0.5], ["b", 0.5]], vec2(0.0, 0.0), 6.0, 4.0, 1.0));
+            add(word_cloud([["kind", 3.0], ["brave", 2.0]], vec2(0.0, 0.0), 6.0, 4.0, 1, 1.0));
+            add(letter_page(["1 Road"], "1 May", "Dear Sam,", "Hello.", "Yours,", "Asha", vec2(0.0, 0.0), 8.0, 6.0, 1.0));
+            wait(0.2);
+        "##;
+        let src = format!("{src}\n{stem}\n{story}");
+        let out = script::run_script(&src, rhai::Map::new()).unwrap();
+        assert!(!out.scenes.is_empty());
+    }
+
+    #[test]
     fn api_is_large() {
         assert!(script::api_signatures().len() > 300);
     }

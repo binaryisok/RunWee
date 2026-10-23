@@ -235,6 +235,20 @@ impl Gas {
         duration: f64,
         seed: u64,
     ) -> Gas {
+        Self::simulate_with(n, bounds, radius, speed, duration, seed, false)
+    }
+    /// Like [`Gas::simulate`]; with `equal_speeds` every particle starts at exactly
+    /// `speed` in a random direction, so collisions visibly relax the speed
+    /// distribution towards Maxwell–Boltzmann.
+    pub fn simulate_with(
+        n: usize,
+        bounds: crate::path::Rect,
+        radius: f64,
+        speed: f64,
+        duration: f64,
+        seed: u64,
+        equal_speeds: bool,
+    ) -> Gas {
         let mut rng = Rng::new(seed);
         let mut pos: Vec<Vec2> = Vec::with_capacity(n);
         while pos.len() < n {
@@ -248,7 +262,13 @@ impl Gas {
         }
         // Maxwell-ish: gaussian components
         let mut vel: Vec<Vec2> = (0..n)
-            .map(|_| v2(rng.normal(), rng.normal()) * (speed / 2f64.sqrt()))
+            .map(|_| {
+                if equal_speeds {
+                    Vec2::from_angle(rng.range(0.0, std::f64::consts::TAU)) * speed
+                } else {
+                    v2(rng.normal(), rng.normal()) * (speed / 2f64.sqrt())
+                }
+            })
             .collect();
         let dt = 1.0 / 240.0;
         let steps = (duration / dt).ceil() as usize;

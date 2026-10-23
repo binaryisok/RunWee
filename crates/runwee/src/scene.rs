@@ -211,7 +211,13 @@ pub struct Scene {
     /// Background changes: (start time, cross-fade duration, background).
     backdrops: Vec<(f64, f64, crate::background::Background)>,
     pub(crate) saved: std::collections::HashMap<Obj, Mobject>,
+    /// Per-frame camera modifiers (shake, follow, splines…), applied in order on
+    /// top of the keyed camera. See [`crate::cinematic`].
+    pub(crate) camera_mods: Vec<CameraMod>,
 }
+
+/// A camera modifier: `(scene, t, keyed camera) -> camera`.
+pub type CameraMod = Arc<dyn Fn(&Scene, f64, Camera) -> Camera + Send + Sync>;
 
 type PostFn = Arc<dyn Fn(f64) -> Vec<crate::effects::Effect> + Send + Sync>;
 
@@ -245,6 +251,7 @@ impl Scene {
             post_effects: Vec::new(),
             backdrops: Vec::new(),
             bg_end: 0.0,
+            camera_mods: Vec::new(),
             saved: Default::default(),
         }
     }
@@ -597,7 +604,16 @@ impl Scene {
 
     // ------------------------------------------------------------- camera
 
+    /// The camera at `t`, including modifiers such as shake or follow.
     pub fn camera_at(&self, t: f64) -> Camera {
+        let mut c = self.camera_base_at(t);
+        for m in &self.camera_mods {
+            c = m(self, t, c);
+        }
+        c
+    }
+    /// The keyed camera at `t` (animations and `set_camera` only, no modifiers).
+    pub fn camera_base_at(&self, t: f64) -> Camera {
         let idx = self.camera_segs.partition_point(|s| s.start <= t);
         if idx == 0 {
             return self.camera0;
@@ -612,7 +628,7 @@ impl Scene {
     }
     pub fn set_camera(&mut self, target: CameraTarget) {
         let t = self.time;
-        let c = target.apply(&self.camera_at(t));
+        let c = target.apply(&self.camera_base_at(t));
         self.camera_segs.push(CameraSeg {
             start: t,
             end: t,
@@ -798,6 +814,11 @@ impl Scene {
             })
             .collect();
         self.play(anims)
+    }
+
+    /// Run time an animation will take when played (explicit or natural).
+    pub fn anim_duration(&self, a: &Animation) -> f64 {
+        a.run_time.unwrap_or_else(|| self.natural_duration(a))
     }
 
     fn natural_duration(&self, a: &Animation) -> f64 {
@@ -1486,7 +1507,7 @@ impl Scene {
         cams.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
         for (target, off, dur, rate) in cams {
             let start = t0 + off;
-            let from = self.camera_at(start);
+            let from = self.camera_base_at(start);
             self.camera_segs.push(CameraSeg {
                 start,
                 end: start + dur,

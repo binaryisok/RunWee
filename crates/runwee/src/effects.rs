@@ -131,6 +131,31 @@ fn hash(x: u32, y: u32, seed: u32) -> f32 {
 /// so effects look the same at every resolution.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Effect {
+    // ------------------------------------------------------------ stylize (phase A5)
+    /// Ordered Bayer dithering; blocks of `cell` × height; quantise to `levels`
+    /// per channel, or snap to `palette` when non-empty.
+    Dither {
+        levels: u8,
+        cell: f32,
+        palette: Vec<Color>,
+    },
+    /// Painterly Kuwahara filter, radius as a fraction of the height.
+    Kuwahara(f32),
+    /// Sort bright runs of pixels by luminance (glitch art).
+    PixelSort {
+        threshold: f32,
+        vertical: bool,
+    },
+    /// ASCII art with cells of `cell` × height; `color` fixes the ink colour.
+    Ascii {
+        cell: f32,
+        color: Option<Color>,
+    },
+    /// CRT monitor: barrel `curvature`, scanline strength, aperture mask, vignette.
+    Crt {
+        curvature: f32,
+        scanlines: f32,
+    },
     /// Multiply RGB (1 = unchanged).
     Brightness(f32),
     Contrast(f32),
@@ -3278,7 +3303,9 @@ impl Effect {
                     premul(mix3(c, sh, amt), s[3])
                 })
             }
-            _ => {}
+            other => {
+                crate::stylize::apply(other, pm);
+            }
         }
     }
 
@@ -3297,6 +3324,25 @@ impl Effect {
         let blues = || vec![rgb8(0xdf, 0xf4, 0xff), rgb8(0x7c, 0xc6, 0xff)];
         let key = name.trim().to_ascii_lowercase().replace(['_', ' '], "-");
         Some(match key.as_str() {
+            // ---- phase A5 stylize filters
+            "dither" => Effect::Dither {
+                levels: 2,
+                cell: if a > 0.0 { a } else { 0.004 },
+                palette: vec![],
+            },
+            "kuwahara" | "painterly" => Effect::Kuwahara(if a > 0.0 { a } else { 0.008 }),
+            "pixel-sort" | "pixelsort" => Effect::PixelSort {
+                threshold: if a > 0.0 { a } else { 0.45 },
+                vertical: false,
+            },
+            "ascii" => Effect::Ascii {
+                cell: if a > 0.0 { a } else { 0.02 },
+                color: None,
+            },
+            "crt" => Effect::Crt {
+                curvature: 0.08,
+                scanlines: if a > 0.0 { a } else { 0.5 },
+            },
             // ---- RunWee originals (and Remotion names with the same meaning)
             "brightness" => Effect::Brightness(a),
             "contrast" => Effect::Contrast(a),
