@@ -27,6 +27,7 @@ pub mod effects;
 pub mod extra;
 pub mod fonts;
 pub mod graph;
+pub mod lesson;
 pub mod math;
 pub mod mobject;
 pub mod output;

@@ -32,6 +32,8 @@ pub enum Quality {
     Medium,
     /// 1920×1080 @ 60 fps.
     High,
+    /// 1920×1080 @ 30 fps. Lesson renders use this (`-q 1080p30`).
+    FullHd30,
     /// 2560×1440 @ 60 fps (default).
     TwoK,
     /// 3840×2160 @ 60 fps.
@@ -44,6 +46,7 @@ impl Quality {
             Quality::Low => (854, 480, 15.0),
             Quality::Medium => (1280, 720, 30.0),
             Quality::High => (1920, 1080, 60.0),
+            Quality::FullHd30 => (1920, 1080, 30.0),
             Quality::TwoK => (2560, 1440, 60.0),
             Quality::FourK => (3840, 2160, 60.0),
         };
@@ -59,6 +62,7 @@ impl Quality {
             "l" | "low" | "480p" | "ql" => Quality::Low,
             "m" | "medium" | "720p" | "qm" => Quality::Medium,
             "h" | "high" | "1080p" | "qh" | "fhd" => Quality::High,
+            "1080p30" | "fhd30" | "lesson" => Quality::FullHd30,
             "2k" | "1440p" | "qhd" | "qp" => Quality::TwoK,
             "4k" | "2160p" | "uhd" | "qk" => Quality::FourK,
             _ => return None,
@@ -643,6 +647,17 @@ pub fn load_image(path: impl AsRef<std::path::Path>) -> anyhow::Result<sk::Pixma
 mod tests {
     use super::*;
     use crate::shapes::*;
+
+    #[test]
+    fn full_hd_30_is_1080p30_and_high_stays_60() {
+        let q = Quality::parse("1080p30").unwrap();
+        assert_eq!(q, Quality::FullHd30);
+        let cfg = q.config();
+        assert_eq!((cfg.width, cfg.height, cfg.fps as i32), (1920, 1080, 30));
+        assert_eq!(Quality::parse("high").unwrap(), Quality::High);
+        assert_eq!(Quality::parse("high").unwrap().config().fps as i32, 60);
+        assert_eq!(Quality::parse("fhd30").unwrap(), Quality::FullHd30);
+    }
 
     #[test]
     fn camera_maps_origin_to_centre() {

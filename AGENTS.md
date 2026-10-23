@@ -12,7 +12,7 @@ runwee render <script.rhai> [-o out.mp4|.webm|.mov|.gif|.png|dir] [-q low|medium
 runwee lesson <anims_bms lesson dir> [--info] [--part intro|lecture] [--limit N] [-q ..] [-o ..]
 runwee new <file.rhai> | runwee api | runwee info
 ```
-Quality: low 480p15, medium 720p30, high 1080p60, 2k (default), 4k.
+Quality: low 480p15, medium 720p30, high 1080p60, 1080p30 (lesson renders), 2k (default), 4k.
 Env: `RUNWEE_TTS='piper -m voice.onnx -f {out}'` (or any command using `{out}`, `{text}`);
 without it narration is timed from word count and shown as captions.
 
@@ -60,6 +60,15 @@ voiceover(text, |info| {...}) (animations inside run during the speech; `info` =
 - Maths: mandelbrot, julia, noise2d/3d, lerp, clamp, interpolate, deg.
 - Question solving: `problem(title, question).given([...]).diagram(m).step(text, tex).step_morph(..).answer(tex)` then `solve(p)`; quiz(q, options, correct, secs); derivation([tex...], pos, size); quadratic/kinematics/ohms_law/stoichiometry_problem generators.
 - Deco: clock, speedometer, progress_bar, die_face, lightbulb, laptop, piano, starburst, spark, marker.
+
+## Lesson scripts
+Narrated lessons can call `lesson_step(id, narration, clips, |info| { ... })` (duration is the
+decoded length of the clips; each step is its own scene), `audio_duration(path)`, `math_board` /
+`board_line`, `field_arrows`, and `vector_arrow`. `runwee render lesson.rhai -q 1080p30
+--audio-json audio.json` muxes an ordered clip plan when the script itself scheduled no audio.
+Paths are relative to the working directory, then to the script's directory. Full contract:
+`docs/LESSON_API.md`. These additions do not change existing script functions (`high` is still
+1080p60).
 
 ## Lesson runner (anims_bms canvas lessons)
 `runwee lesson <dir>` runs a lesson's original `index.js` / `simulations.js` / `mathOverlay.js` in embedded QuickJS, records canvas calls per frame and lays out canvas + header chip + equation board + narration + captions. Lesson audio `audio/audio_<id>.mp3|wav` is used if present, else TTS.

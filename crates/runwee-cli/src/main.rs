@@ -10,6 +10,7 @@
 mod script;
 
 use anyhow::{bail, Context, Result};
+use runwee::lesson::{self, Attach};
 use runwee::prelude::*;
 use std::path::{Path, PathBuf};
 
@@ -26,7 +27,8 @@ USAGE:
 
 RENDER OPTIONS:
     -o, --output <path>     .mp4 .webm .mov .gif .png or a directory for PNG frames
-    -q, --quality <q>       low | medium | high | 2k | 4k   (default 2k)
+    -q, --quality <q>       low | medium | high | 1080p30 | 2k | 4k   (default 2k)
+                            high = 1080p60, 1080p30 = 1920x1080 @ 30 fps
     --still <t>             Render a single PNG at time t
     --props <json>          JSON object exposed to the script as PROPS
     --theme <name>          restyle every scene (dark, light, chalkboard, blueprint, paper, …)
@@ -36,6 +38,9 @@ RENDER OPTIONS:
     --transparent           Keep alpha (webm / mov / png)
     --no-audio              Skip the audio track
     --no-captions           Skip soft subtitles
+    --audio-json <file>     If the script scheduled no audio, mux these clips in order
+                            and extend each step/scene to the decoded clip duration.
+                            See docs/LESSON_API.md for the JSON shapes.
 ";
 
 const TEMPLATE: &str = r#"// RunWee scene script — render with: runwee render this_file.rhai -q medium
@@ -74,6 +79,7 @@ struct Args {
     part: Option<String>,
     limit: Option<usize>,
     info: bool,
+    audio_json: Option<String>,
 }
 
 fn parse_args() -> Result<Args> {
@@ -96,6 +102,7 @@ fn parse_args() -> Result<Args> {
         part: None,
         limit: None,
         info: false,
+        audio_json: None,
     };
     let mut i = 0;
     let value = |i: &mut usize, flag: &str| -> Result<String> {
@@ -126,6 +133,7 @@ fn parse_args() -> Result<Args> {
             "--part" => a.part = Some(value(&mut i, &arg)?),
             "--limit" => a.limit = Some(num(value(&mut i, &arg)?, &arg)? as usize),
             "--info" => a.info = true,
+            "--audio-json" => a.audio_json = Some(value(&mut i, &arg)?),
             "-h" | "--help" => a.cmd = "help".into(),
             s if s.starts_with('-') => bail!("unknown option {s}\n\n{USAGE}"),
             s if a.cmd.is_empty() => a.cmd = s.to_string(),
@@ -258,6 +266,11 @@ fn render_cmd(a: &Args) -> Result<()> {
     let src =
         std::fs::read_to_string(file).with_context(|| format!("reading {}", file.display()))?;
     let props = props_map(a.props.as_deref())?;
+    if let Some(dir) = file.parent() {
+        if !dir.as_os_str().is_empty() {
+            std::env::set_var("RUNWEE_SCRIPT_DIR", dir);
+        }
+    }
     if a.vertical {
         set_frame_size(8.0 * 9.0 / 16.0, 8.0);
     }
@@ -295,6 +308,11 @@ fn render_cmd(a: &Args) -> Result<()> {
         };
         for (scene, _) in &mut out.scenes {
             scene.base_background(bg.clone());
+        }
+    }
+    if a.still.is_none() {
+        if let Some(json_path) = &a.audio_json {
+            attach_audio_json(&mut out, Path::new(json_path))?;
         }
     }
     let vertical = a.vertical || out.vertical;
@@ -355,6 +373,31 @@ fn render_cmd(a: &Args) -> Result<()> {
     Ok(())
 }
 
+fn attach_audio_json(out: &mut script::ScriptOutput, json_path: &Path) -> Result<()> {
+    let text = std::fs::read_to_string(json_path)
+        .with_context(|| format!("reading {}", json_path.display()))?;
+    let base = json_path.parent().unwrap_or_else(|| Path::new("."));
+    let steps = lesson::parse_audio_plan(&text, base)
+        .with_context(|| format!("parsing {}", json_path.display()))?;
+    let mut scenes: Vec<&mut runwee::scene::Scene> =
+        out.scenes.iter_mut().map(|(scene, _)| scene).collect();
+    match lesson::attach_audio_plan(&mut scenes, &steps)? {
+        Attach::Applied => {
+            let clips: usize = steps.iter().map(|s| s.clips.len()).sum();
+            eprintln!(
+                "audio-json: {} step(s), {} clip(s) placed on the timeline",
+                steps.len(),
+                clips
+            );
+        }
+        Attach::SkippedExistingAudio => {
+            eprintln!("audio-json: script already scheduled audio; leaving it unchanged");
+        }
+        Attach::Empty => eprintln!("audio-json: no clips listed"),
+    }
+    Ok(())
+}
+
 fn info_cmd() {
     println!("RunWee {}", env!("CARGO_PKG_VERSION"));
     let ff = std::process::Command::new("ffmpeg")
@@ -373,7 +416,9 @@ fn info_cmd() {
             .map(|n| n.get())
             .unwrap_or(1)
     );
-    println!("qualities: low 480p15 · medium 720p30 · high 1080p60 · 2k 1440p60 · 4k 2160p60");
+    println!(
+        "qualities: low 480p15 · medium 720p30 · high 1080p60 · 1080p30 · 2k 1440p60 · 4k 2160p60"
+    );
     println!("backgrounds / themes: {}", BACKGROUND_PRESETS.join(", "));
     println!("formats: mp4 (h264) · webm (vp9, alpha) · mov (prores) · gif · png / png sequence");
     println!("script functions: {}", script::api_signatures().len());
@@ -456,6 +501,28 @@ mod tests {
         }
         assert!(n >= 4);
         engine.compile(TEMPLATE).unwrap();
+    }
+
+    #[test]
+    fn lesson_audio_and_board_run() {
+        let path = std::env::temp_dir().join("runwee-cli-audio-duration.wav");
+        runwee::audio::AudioData::silence(0.4)
+            .save_wav(&path)
+            .unwrap();
+        let (engine, _) = script::test_engine();
+        let src = format!("audio_duration(\"{}\")", path.display());
+        let d: f64 = engine.eval(&src).unwrap();
+        assert!((d - 0.4).abs() < 0.02, "{d}");
+        engine
+            .run(
+                r##"
+                math_board(vec2(3.2, 0.4), 5.0, 4.5);
+                let row = board_line("math", "q = ne");
+                let arrows = field_arrows([[0.0, 0.0, 1.0], [1.5, 0.0, -1.0]], -1.0, 2.0, -1.0, 1.0, 4, 3, "#2F6FED");
+                let v = vector_arrow(vec2(-1.0, -1.0), vec2(0.8, 0.4), "E", "#E24A3B");
+            "##,
+            )
+            .unwrap();
     }
 
     #[test]

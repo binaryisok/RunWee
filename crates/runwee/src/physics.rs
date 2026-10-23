@@ -764,6 +764,67 @@ pub fn field_lines(
     g
 }
 
+/// Lattice of electric-field arrows (k = 1). Arrow length grows with log|E| and is
+/// capped to the cell size. Samples that fall on a charge are skipped.
+pub fn field_arrow_grid(
+    charges: &[(Vec2, f64)],
+    x0: f64,
+    x1: f64,
+    y0: f64,
+    y1: f64,
+    cols: usize,
+    rows: usize,
+    color: Color,
+) -> Mobject {
+    let cols = cols.max(1);
+    let rows = rows.max(1);
+    let dx = if cols == 1 {
+        0.0
+    } else {
+        (x1 - x0) / (cols as f64 - 1.0)
+    };
+    let dy = if rows == 1 {
+        0.0
+    } else {
+        (y1 - y0) / (rows as f64 - 1.0)
+    };
+    let cell = dx.abs().min(if rows == 1 { dx.abs() } else { dy.abs() });
+    let cell = if cell < 1e-6 { 0.4 } else { cell };
+    let mut g = Mobject::empty();
+    for j in 0..rows {
+        for i in 0..cols {
+            let p = v2(
+                if cols == 1 {
+                    (x0 + x1) * 0.5
+                } else {
+                    x0 + dx * i as f64
+                },
+                if rows == 1 {
+                    (y0 + y1) * 0.5
+                } else {
+                    y0 + dy * j as f64
+                },
+            );
+            if charges.iter().any(|(c, _)| (p - *c).length() < cell * 0.45) {
+                continue;
+            }
+            let e = e_field(charges, p);
+            let mag = e.length();
+            if mag < 1e-8 {
+                continue;
+            }
+            let len = (0.28 + 0.55 * (mag.ln().max(0.0) / 5.0).min(1.0)) * cell * 0.9;
+            let dir = e.normalize() * len;
+            g.push(arrow_styled(
+                p - dir * 0.5,
+                p + dir * 0.5,
+                ArrowStyle::default().color(color).thickness(3.5),
+            ));
+        }
+    }
+    g
+}
+
 /// Equipotential contours at the given potential levels.
 pub fn equipotentials(
     charges: &[(Vec2, f64)],

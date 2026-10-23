@@ -7,9 +7,11 @@
 
 use rhai::{Array, Dynamic, Engine, EvalAltResult, FnPtr, Map, NativeCallContext, Scope, AST};
 use runwee::chemistry as chem;
+use runwee::lesson;
 use runwee::prelude::*;
 use runwee::{biology as bio, physics as phys};
 use std::cell::Cell;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
 
 type N = Dynamic;
@@ -117,12 +119,20 @@ impl ScriptOutput {
     }
 }
 
+struct MathBoard {
+    left: f64,
+    inner_w: f64,
+    /// Scene-y of the top of the next row (y grows upward).
+    y: f64,
+}
+
 struct State {
     done: Vec<(Scene, Option<Transition>)>,
     cur: Scene,
     vertical: bool,
     quality: Option<String>,
     theme: Option<Theme>,
+    board: Option<MathBoard>,
 }
 
 type Shared = Arc<Mutex<State>>;
@@ -1791,6 +1801,7 @@ fn register_scene(engine: &mut Engine, st: Shared) {
         };
         let done = std::mem::replace(&mut g.cur, fresh);
         g.done.push((done, Some(Transition::new(p, f(&dur)))));
+        g.board = None;
         Ok(())
     });
     let st1 = st.clone();
@@ -1803,6 +1814,7 @@ fn register_scene(engine: &mut Engine, st: Shared) {
         };
         let done = std::mem::replace(&mut g.cur, fresh);
         g.done.push((done, None));
+        g.board = None;
     });
     // 3D
     engine.register_type_with_name::<CameraRig>("CameraRig");
@@ -1984,6 +1996,10 @@ fn register_3d_and_stem(engine: &mut Engine) {
     engine.register_fn("force_arrow", |from: Vec2, v: Vec2, label: &str, c: N| {
         phys::force_arrow(from, v, label, col(&c))
     });
+    // Alias used by lesson diagrams (same labelled vector as `force_arrow`).
+    engine.register_fn("vector_arrow", |from: Vec2, v: Vec2, label: &str, c: N| {
+        phys::force_arrow(from, v, label, col(&c))
+    });
     engine.register_fn("free_body", |center: Vec2, forces: Array| {
         let fs: Vec<(Vec2, String, Color)> = forces
             .iter()
@@ -2060,6 +2076,21 @@ fn register_3d_and_stem(engine: &mut Engine) {
             BLUE_B,
         )
     });
+    engine.register_fn(
+        "field_arrows",
+        |charges: Array, x0: N, x1: N, y0: N, y1: N, cols: N, rows: N, c: N| {
+            phys::field_arrow_grid(
+                &charges_of(&charges),
+                f(&x0),
+                f(&x1),
+                f(&y0),
+                f(&y1),
+                f(&cols).round().max(1.0) as usize,
+                f(&rows).round().max(1.0) as usize,
+                col(&c),
+            )
+        },
+    );
     engine.register_fn("equipotentials", |charges: Array, levels: Array| {
         phys::equipotentials(
             &charges_of(&charges),
@@ -2402,7 +2433,144 @@ pub fn default_scope(props: Map) -> Scope<'static> {
         scope.push_constant(*name, *c);
     }
     scope.push_constant("PROPS", props);
+    // Stable palette for lesson diagrams. White and dark neutrals still follow the theme ink.
+    scope.push_constant("LESSON_POS", Color::parse("#E24A3B").unwrap_or(RED));
+    scope.push_constant("LESSON_NEG", Color::parse("#2F6FED").unwrap_or(BLUE));
+    scope.push_constant("LESSON_GOLD", GOLD);
+    scope.push_constant("LESSON_METAL", Color::parse("#8D97A3").unwrap_or(GRAY));
+    scope.push_constant("LESSON_ACCENT", TEAL_E);
+    scope.push_constant("LESSON_INK", Color::parse("#1C1917").unwrap_or(BLACK));
+    scope.push_constant("LESSON_PAPER", Color::parse("#F7F3EA").unwrap_or(WHITE));
     scope
+}
+
+fn resolve_media(path: &str) -> PathBuf {
+    let base = std::env::var_os("RUNWEE_SCRIPT_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("."));
+    lesson::resolve_clip(&base, path)
+}
+
+fn clip_strings(arr: &Array) -> R<Vec<String>> {
+    let mut out = Vec::with_capacity(arr.len());
+    for d in arr {
+        if let Ok(s) = d.clone().into_immutable_string() {
+            out.push(s.to_string());
+        } else {
+            return Err(format!("audio clip must be a path string, got {d}").into());
+        }
+    }
+    Ok(out)
+}
+
+/// `lesson_step` opens one scene whose length is the decoded duration of `clips`.
+fn run_lesson_step(st: &Shared, id: &str, narration: &str, clips: Array, fp: FnPtr) -> R<()> {
+    let paths = clip_strings(&clips)?;
+    let resolved: Vec<PathBuf> = paths.iter().map(|p| resolve_media(p)).collect();
+    let loaded = lesson::load_clips(&resolved).map_err(|e| e.to_string())?;
+    let total = lesson::clips_end(&loaded);
+    let start = {
+        let mut g = st.lock().unwrap();
+        if !g.cur.is_empty() {
+            let mut fresh = if g.vertical {
+                Scene::vertical()
+            } else {
+                Scene::new()
+            };
+            fresh.inherit_look_from(&g.cur);
+            if let Some(th) = g.theme.clone() {
+                fresh.base_theme(th);
+            }
+            let done = std::mem::replace(&mut g.cur, fresh);
+            g.done.push((done, None));
+            g.board = None;
+        }
+        let start = g.cur.time();
+        g.cur.marker(id);
+        lesson::place_clips(&mut g.cur, &loaded, start);
+        if !narration.is_empty() && total > 0.0 {
+            g.cur.captions.add_text(narration, start, start + total, 7);
+        }
+        start
+    };
+    let mut info = Map::new();
+    info.insert("id".into(), id.to_string().into());
+    info.insert("start".into(), start.into());
+    info.insert("duration".into(), total.into());
+    info.insert("end".into(), (start + total).into());
+    let mut clip_arr = Array::new();
+    for (i, c) in loaded.iter().enumerate() {
+        let mut cm = Map::new();
+        cm.insert("path".into(), c.path.display().to_string().into());
+        cm.insert("start".into(), (start + c.start).into());
+        cm.insert("duration".into(), c.duration.into());
+        cm.insert("index".into(), (i as i64).into());
+        clip_arr.push(cm.into());
+    }
+    info.insert("clips".into(), clip_arr.into());
+    let (engine, ast) = RUNTIME.get().ok_or("runtime not ready")?;
+    let _ = fp.call::<Dynamic>(engine, ast, (info,))?;
+    let mut g = st.lock().unwrap();
+    let end = start + total;
+    if total > 0.0 && g.cur.time() > end + 1.0 / 30.0 {
+        eprintln!(
+            "warning: lesson_step '{id}' animations run to {:.3}s, past the audio end {end:.3}s",
+            g.cur.time()
+        );
+    }
+    if total > 0.0 {
+        g.cur.seek(end);
+    }
+    Ok(())
+}
+
+fn register_lesson(engine: &mut Engine, st: Shared) {
+    engine.register_fn("audio_duration", |path: &str| -> R<f64> {
+        lesson::media_duration(&resolve_media(path)).map_err(|e| e.to_string().into())
+    });
+    let st1 = st.clone();
+    engine.register_fn(
+        "lesson_step",
+        move |id: &str, clips: Array, fp: FnPtr| -> R<()> {
+            run_lesson_step(&st1, id, "", clips, fp)
+        },
+    );
+    let st1 = st.clone();
+    engine.register_fn(
+        "lesson_step",
+        move |id: &str, narration: &str, clips: Array, fp: FnPtr| -> R<()> {
+            run_lesson_step(&st1, id, narration, clips, fp)
+        },
+    );
+    let st1 = st.clone();
+    engine.register_fn("math_board", move |at: Vec2, w: N, h: N| -> Obj {
+        let w = f(&w).max(0.4);
+        let h = f(&h).max(0.4);
+        let pad = 0.22;
+        let card = lesson::math_card(w, h).move_to(at);
+        let mut g = st1.lock().unwrap();
+        let obj = g.cur.add(card);
+        g.board = Some(MathBoard {
+            left: at.x - w / 2.0 + pad,
+            inner_w: w - 2.0 * pad,
+            y: at.y + h / 2.0 - pad,
+        });
+        obj
+    });
+    let st1 = st.clone();
+    engine.register_fn("board_line", move |kind: &str, content: &str| -> R<Obj> {
+        let mut g = st1.lock().unwrap();
+        let Some(board) = g.board.as_ref() else {
+            return Err("call math_board(center, width, height) before board_line".into());
+        };
+        let row = lesson::math_line(kind, content, board.inner_w);
+        let dx = board.left - row.left().x;
+        let dy = board.y - row.top().y;
+        let row = row.shift(v2(dx, dy));
+        let next_y = board.y - row.height() - 0.14;
+        g.board.as_mut().unwrap().y = next_y;
+        Ok(g.cur.register(row))
+    });
 }
 
 /// Build an engine bound to a fresh state.
@@ -2416,6 +2584,7 @@ fn build_engine() -> (Engine, Shared) {
         vertical: false,
         quality: None,
         theme: None,
+        board: None,
     }));
     register_math(&mut engine);
     register_mobject(&mut engine);
@@ -2425,6 +2594,7 @@ fn build_engine() -> (Engine, Shared) {
     register_canvas(&mut engine);
     register_anims(&mut engine);
     register_scene(&mut engine, st.clone());
+    register_lesson(&mut engine, st.clone());
     register_3d_and_stem(&mut engine);
     engine.on_print(|s| eprintln!("[script] {s}"));
     (engine, st)
